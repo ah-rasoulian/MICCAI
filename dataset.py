@@ -5,6 +5,9 @@ from sklearn.model_selection import StratifiedKFold
 import pickle
 import random
 from collections import Counter
+from torch.utils.data import Dataset
+import nibabel as nib
+import torch
 
 
 def find_sub_ses_pairs(data_path: str):
@@ -38,3 +41,74 @@ def cross_validation_division(num_folds, out_dir):
     for i in range(num_folds):
         with open(os.path.join(out_dir, f'fold{i + 1}-test-sub-ses.pth'), 'wb') as file:
             pickle.dump(sub_ses_test_folds[i], file)
+
+
+def get_train_valid_test_sub_ses(fold_to_do, folds_dir):
+    assert fold_to_do in range(1, 11)
+
+    data_path = r'C:\lausanne-aneurysym-patches\Data_Set_Feb_05_2023_v1-all'
+    valid_fold = (fold_to_do + 1) % 10
+    all_sub_ses = find_sub_ses_pairs(os.path.join(data_path, "Negative_Patches"))
+    with open(os.path.join(folds_dir, f'fold{fold_to_do}-test-sub-ses.pth'), 'rb') as file:
+        test_sub_ses = pickle.load(file)
+    with open(os.path.join(folds_dir, f'fold{valid_fold}-test-sub-ses.pth'), 'rb') as file:
+        valid_sub_ses = pickle.load(file)
+
+    train_sub_ses = np.array([x for x in all_sub_ses if x not in test_sub_ses and x not in valid_sub_ses])
+
+    return train_sub_ses, valid_sub_ses, test_sub_ses
+
+
+class AneurysmDataset(Dataset):
+    def __init__(self, root_dir, sub_ses_to_use, transform=None):
+        self.images_files = []
+        self.labels = []
+        self.masks_files = []
+        self.transform = transform
+        self.read_dataset(root_dir, sub_ses_to_use)
+
+    def read_dataset(self, root_dir, sub_ses_to_use):
+        negative_dir_path = os.path.join(root_dir, "Negative_patches")
+        positive_dir_path = os.path.join(root_dir, "Positive_Patches")
+
+        for folder in os.listdir(positive_dir_path):
+            sub = re.findall(r"sub-\d+", folder)[0]
+            ses = re.findall(r"ses-\w{6}\d+", folder)[0]
+            sub_ses = "{}_{}".format(sub, ses)
+            if sub_ses in sub_ses_to_use:
+                folder_path = os.path.join(positive_dir_path, folder)
+                for patch_pair in os.listdir(folder_path):
+                    patch_pair_path = os.path.join(folder_path, patch_pair)
+                    for patch in os.listdir(patch_pair_path):
+                        patch_path = os.path.join(patch_pair_path, patch)
+                        self.images_files.append(patch_path)
+                        self.labels.append(1)
+                        mask_path = patch_path.replace("Positive_Patches", "Positive_Patches_Masks").replace("pos_patch_angio", "mask_patch")
+                        self.masks_files.append(mask_path)
+
+        for folder in os.listdir(negative_dir_path):
+            sub = re.findall(r"sub-\d+", folder)[0]
+            ses = re.findall(r"ses-\w{6}\d+", folder)[0]
+            sub_ses = "{}_{}".format(sub, ses)
+            if sub_ses in sub_ses_to_use:
+                folder_path = os.path.join(negative_dir_path, folder)
+                for patch_pair in os.listdir(folder_path):
+                    patch_pair_path = os.path.join(folder_path, patch_pair)
+                    for patch in os.listdir(patch_pair_path):
+                        patch_path = os.path.join(patch_pair_path, patch)
+                        self.images_files.append(patch_path)
+                        self.labels.append(0)
+                        self.masks_files.append(None)
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, item):
+        if torch.is_tensor(item):
+            item = item.tolist()
+
+        image = torch.FloatTensor(nib.load(self.images_files[item]).get_fdata()).unsqueeze(0)  # to add a channel -> ch, h, w, d
+        mask = torch.zeros_like(image) if self.masks_files[item] is None else torch.FloatTensor(nib.load(self.masks_files[item]).get_fdata())
+        label = torch.FloatTensor(self.labels[item])
+
+        return image, mask, label
