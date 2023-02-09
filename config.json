@@ -1,0 +1,11 @@
+{
+  "epochs": -1,
+  "lambda_loss": 0.5,
+  "batch_size": 8,
+  "lr": 0.0001,
+  "embed_dims": [9, 26, 61, 74],
+  "fold_to_do": 1,
+
+  "data_path": "C:\\lausanne-aneurysym-patches\\Data_Set_Feb_05_2023_v1-all",
+  "extra_path": "extra\\"
+}
