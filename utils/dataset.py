@@ -43,10 +43,9 @@ def cross_validation_division(num_folds, out_dir):
             pickle.dump(sub_ses_test_folds[i], file)
 
 
-def get_train_valid_test_sub_ses(fold_to_do, folds_dir):
-    assert fold_to_do in range(1, 11)
+def get_train_valid_test_sub_ses(data_path, fold_to_do, folds_dir):
+    assert fold_to_do in range(1, 11), "wrong fold number"
 
-    data_path = r'C:\lausanne-aneurysym-patches\Data_Set_Feb_05_2023_v1-all'
     valid_fold = (fold_to_do + 1) % 10
     all_sub_ses = find_sub_ses_pairs(os.path.join(data_path, "Negative_Patches"))
     with open(os.path.join(folds_dir, f'fold{fold_to_do}-test-sub-ses.pth'), 'rb') as file:
@@ -65,11 +64,13 @@ class AneurysmDataset(Dataset):
         self.labels = []
         self.masks_files = []
         self.transform = transform
+
         self.read_dataset(root_dir, sub_ses_to_use)
+        self.shuffle_dataset()
 
     def read_dataset(self, root_dir, sub_ses_to_use):
-        negative_dir_path = os.path.join(root_dir, "Negative_patches")
         positive_dir_path = os.path.join(root_dir, "Positive_Patches")
+        negative_dir_path = os.path.join(root_dir, "Negative_patches")
 
         for folder in os.listdir(positive_dir_path):
             sub = re.findall(r"sub-\d+", folder)[0]
@@ -100,6 +101,14 @@ class AneurysmDataset(Dataset):
                         self.labels.append(0)
                         self.masks_files.append(None)
 
+    def shuffle_dataset(self):
+        temp = list(zip(self.images_files, self.masks_files, self.labels))
+        random.shuffle(temp)
+        images_files, masks_files, labels = zip(*temp)
+        self.images_files = images_files
+        self.masks_files = masks_files
+        self.labels = labels
+
     def __len__(self):
         return len(self.labels)
 
@@ -107,8 +116,22 @@ class AneurysmDataset(Dataset):
         if torch.is_tensor(item):
             item = item.tolist()
 
-        image = torch.FloatTensor(nib.load(self.images_files[item]).get_fdata()).unsqueeze(0)  # to add a channel -> ch, h, w, d
+        image = torch.FloatTensor(nib.load(self.images_files[item]).get_fdata())
         mask = torch.zeros_like(image) if self.masks_files[item] is None else torch.FloatTensor(nib.load(self.masks_files[item]).get_fdata())
-        label = torch.FloatTensor(self.labels[item])
+        label = torch.FloatTensor([self.labels[item]])
+
+        image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
 
         return image, mask, label
+
+
+def image_label_collate(batch):
+    data = torch.stack([item[0] for item in batch])
+    target = torch.stack([item[2] for item in batch])
+    return [data, target]
+
+
+def image_mask_collate(batch):
+    data = torch.stack([item[0] for item in batch])
+    target = torch.stack([item[1] for item in batch])
+    return [data, target]
