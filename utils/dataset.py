@@ -118,7 +118,7 @@ class AneurysmDataset(Dataset):
 
         image = torch.FloatTensor(nib.load(self.images_files[item]).get_fdata())
         mask = torch.zeros_like(image) if self.masks_files[item] is None else torch.FloatTensor(nib.load(self.masks_files[item]).get_fdata())
-        label = torch.FloatTensor([self.labels[item]])
+        label = self.labels[item]
 
         image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
 
@@ -127,7 +127,7 @@ class AneurysmDataset(Dataset):
 
 def image_label_collate(batch):
     data = torch.stack([item[0] for item in batch])
-    target = torch.stack([item[2] for item in batch])
+    target = torch.stack([torch.FloatTensor([item[2]]) for item in batch])
     return [data, target]
 
 
