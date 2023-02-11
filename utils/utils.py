@@ -173,3 +173,20 @@ def save_model(model: nn.Module, path: str):
 def load_model(model: nn.Module, path: str):
     model.load_state_dict(torch.load(path))
 
+
+class FocalBCELoss:
+    def __init__(self, gamma=2, reduction='mean'):
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def __call__(self, pred, gt):
+        sigmoid = torch.sigmoid(pred)
+        bce = -(gt * ((1 - sigmoid) ** self.gamma) * torch.log(sigmoid) +
+                (1 - gt) * (sigmoid ** self.gamma) * torch.log(1 - sigmoid))
+
+        if self.reduction == 'sum':
+            reduced_bce = bce.sum()
+        else:
+            reduced_bce = bce.mean()
+
+        return reduced_bce
