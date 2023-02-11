@@ -118,20 +118,35 @@ class AneurysmDataset(Dataset):
 
         image = torch.FloatTensor(nib.load(self.images_files[item]).get_fdata())
         mask = torch.zeros_like(image) if self.masks_files[item] is None else torch.FloatTensor(nib.load(self.masks_files[item]).get_fdata())
-        label = self.labels[item]
+        label = torch.FloatTensor([self.labels[item]])
 
+        if self.transform is not None:
+            image = self.transform(image)
         image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
 
         return image, mask, label
 
 
+class CustomBatch:
+    def __init__(self, data, only_label: bin):
+        transposed_data = list(zip(*data))
+        self.input = torch.stack(transposed_data[0], 0)
+        if only_label:
+            self.target = torch.stack(transposed_data[2], 0)
+        else:
+            self.target = torch.stack(transposed_data[1], 0)
+
+    def pin_memory(self):
+        self.input = self.input.pin_memory()
+        self.target = self.target.pin_memory()
+        return self
+
+
 def image_label_collate(batch):
-    data = torch.stack([item[0] for item in batch])
-    target = torch.stack([torch.FloatTensor([item[2]]) for item in batch])
-    return [data, target]
+    batch = CustomBatch(batch, True)
+    return [batch.input, batch.target]
 
 
 def image_mask_collate(batch):
-    data = torch.stack([item[0] for item in batch])
-    target = torch.stack([item[1] for item in batch])
-    return [data, target]
+    batch = CustomBatch(batch, False)
+    return [batch.input, batch.target]
