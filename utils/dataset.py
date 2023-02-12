@@ -43,19 +43,16 @@ def cross_validation_division(num_folds, out_dir):
             pickle.dump(sub_ses_test_folds[i], file)
 
 
-def get_train_valid_test_sub_ses(data_path, fold_to_do, folds_dir):
-    assert fold_to_do in range(1, 11), "wrong fold number"
-
-    valid_fold = (fold_to_do + 1) % 10
+def get_train_valid_test_sub_ses(data_path):
     all_sub_ses = find_sub_ses_pairs(os.path.join(data_path, "Negative_Patches"))
-    with open(os.path.join(folds_dir, f'fold{fold_to_do}-test-sub-ses.pth'), 'rb') as file:
-        test_sub_ses = pickle.load(file)
-    with open(os.path.join(folds_dir, f'fold{valid_fold}-test-sub-ses.pth'), 'rb') as file:
-        valid_sub_ses = pickle.load(file)
 
-    train_sub_ses = np.array([x for x in all_sub_ses if x not in test_sub_ses and x not in valid_sub_ses])
+    test_sub_ses = []
+    with open(r"D:\Projects\MICCAI\extra\test_sub_ses.pth", 'rb') as f:
+        test_sub_ses = pickle.load(f)
 
-    return train_sub_ses, valid_sub_ses, test_sub_ses
+    train_val_sub_ses = [x for x in all_sub_ses if x not in test_sub_ses]
+
+    return train_val_sub_ses, test_sub_ses, []
 
 
 class AneurysmDataset(Dataset):
@@ -120,15 +117,17 @@ class AneurysmDataset(Dataset):
         mask = torch.zeros_like(image) if self.masks_files[item] is None else torch.FloatTensor(nib.load(self.masks_files[item]).get_fdata())
         label = torch.FloatTensor([self.labels[item]])
 
-        if self.transform is not None:
-            image = self.transform(image)
         image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
+        image = (image - image.min()) / (image.max() - image.min())  # normalize to 0-1
+
+        if self.transform is not None and self.labels[item] != 0:  # only augment positive patches
+            image = self.transform(image)
 
         return image, mask, label
 
 
 class CustomBatch:
-    def __init__(self, data, only_label: bin):
+    def __init__(self, data, only_label: bool):
         transposed_data = list(zip(*data))
         self.input = torch.stack(transposed_data[0], 0)
         if only_label:
