@@ -118,11 +118,11 @@ class AneurysmDataset(Dataset):
         label = torch.FloatTensor([self.labels[item]])
 
         image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
-        image = (image - image.min()) / (image.max() - image.min())  # normalize to 0-1
-
         if self.transform is not None and self.labels[item] != 0:  # only augment positive patches
             image = self.transform(image)
 
+        if image.max() - image.min() > 0:
+            image = (image - image.min()) / (image.max() - image.min())  # normalize to 0-1
         return image, mask, label
 
 

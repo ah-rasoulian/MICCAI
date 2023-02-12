@@ -13,7 +13,7 @@ import torch.nn as nn
 from models.focalnet import FocalNet
 import torch
 from monai.losses import FocalLoss
-from monai.transforms import RandGaussianNoise, RandRotate, RandFlip, RandZoom, Compose
+from monai.transforms import RandGaussianNoise, RandRotate, RandFlip, RandZoom, Compose, RandRicianNoise
 from numpy import deg2rad
 import cv2
 import matplotlib.pyplot as plt
@@ -51,23 +51,22 @@ def main():
 
     augmentation = None
     if do_augmentation:
-        augmentation = Compose([RandGaussianNoise(prob=0.5, std=0.4),
+        augmentation = Compose([RandRicianNoise(prob=0.5),
                                 RandRotate(prob=0.5, range_x=deg2rad(90), range_y=deg2rad(90), range_z=deg2rad(90)),
                                 RandFlip(prob=0.5),
                                 RandZoom(prob=0.5)])
 
     train_sub_ses, valid_sub_ses, test_sub_ses = get_train_valid_test_sub_ses(data_path)
     train_ds = AneurysmDataset(data_path, train_sub_ses, transform=augmentation)
+
     # for i in range(len(train_ds)):
     #     x, m, y = train_ds[i]
     #     print(x.min(), x.max())
     #     if y == 0:
     #         continue
-    #     for j in range(m.shape[0]):
-    #         print(j)
-    #         cv2.imshow('w', m[j].numpy())
-    #         cv2.imshow('im', x[0, j].numpy())
-    #         cv2.waitKey()
+    #     cv2.imshow('w', m[32].numpy())
+    #     cv2.imshow('im', x[0, 32].numpy())
+    #     cv2.waitKey()
     # return
 
     valid_ds = AneurysmDataset(data_path, valid_sub_ses)
