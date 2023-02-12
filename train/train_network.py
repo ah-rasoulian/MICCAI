@@ -13,9 +13,10 @@ import torch.nn as nn
 from models.focalnet import FocalNet
 import torch
 from monai.losses import FocalLoss
-from monai.transforms import RandGaussianNoise, RandRotate, RandFlip, RandZoom
-from torchvision.transforms import transforms
+from monai.transforms import RandGaussianNoise, RandRotate, RandFlip, RandZoom, Compose
 from numpy import deg2rad
+import cv2
+import matplotlib.pyplot as plt
 
 
 def main():
@@ -26,26 +27,51 @@ def main():
         config_dict = json.load(f)
 
     # extract args from config file
+    img_size = config_dict["img_size"]
+    in_ch = config_dict["in_ch"]
+    num_classes = config_dict["num_classes"]
+
     epochs = config_dict["epochs"]
     lambda_loss = config_dict["lambda_loss"]
     batch_size = config_dict["batch_size"]
     lr = config_dict["lr"]
-    embed_dims_unet = list(config_dict["embed_dims_unet"])
-    embed_dims_focal = config_dict["embed_dims_focal"]
-    fold_to_do = config_dict["fold_to_do"]
+    num_workers = config_dict["num_workers"]
+    do_augmentation = bool(config_dict["do_augmentation"])
+
+    unet_embed_dims = list(config_dict["unet_embed_dims"])
+
+    focal_patch_size = config_dict["focal_patch_size"]
+    focal_embed_dims = config_dict["focal_embed_dims"]
+    focal_depths = list(config_dict["focal_depths"])
+    focal_levels = list(config_dict["focal_levels"])
+    focal_windows = list(config_dict["focal_windows"])
 
     data_path = config_dict["data_path"]
     extra_path = config_dict["extra_path"]
 
-    augmentation = transforms.Compose([RandGaussianNoise(prob=0.5, std=0.4),
-                                       RandRotate(prob=0.5, range_x=deg2rad(45), range_y=deg2rad(45), range_z=deg2rad(45)),
-                                       RandFlip(prob=0.5),
-                                       RandZoom(prob=0.5)])
+    augmentation = None
+    if do_augmentation:
+        augmentation = Compose([RandGaussianNoise(prob=0.5, std=0.4),
+                                RandRotate(prob=0.5, range_x=deg2rad(90), range_y=deg2rad(90), range_z=deg2rad(90)),
+                                RandFlip(prob=0.5),
+                                RandZoom(prob=0.5)])
 
-    train_sub_ses, valid_sub_ses, test_sub_ses = get_train_valid_test_sub_ses(data_path, fold_to_do, os.path.join(extra_path, "cross_validation_folds"))
+    train_sub_ses, valid_sub_ses, test_sub_ses = get_train_valid_test_sub_ses(data_path)
     train_ds = AneurysmDataset(data_path, train_sub_ses, transform=augmentation)
+    # for i in range(len(train_ds)):
+    #     x, m, y = train_ds[i]
+    #     print(x.min(), x.max())
+    #     if y == 0:
+    #         continue
+    #     for j in range(m.shape[0]):
+    #         print(j)
+    #         cv2.imshow('w', m[j].numpy())
+    #         cv2.imshow('im', x[0, j].numpy())
+    #         cv2.waitKey()
+    # return
+
     valid_ds = AneurysmDataset(data_path, valid_sub_ses)
-    test_ds = AneurysmDataset(data_path, test_sub_ses)
+    # test_ds = AneurysmDataset(data_path, test_sub_ses)
 
     labels_counts = Counter(train_ds.labels)
     target_list = torch.tensor(train_ds.labels)
@@ -53,14 +79,17 @@ def main():
     class_weights = class_weights[target_list]
     train_sampler = WeightedRandomSampler(class_weights, len(class_weights), replacement=True)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=image_label_collate, sampler=train_sampler, pin_memory=True, num_workers=4)
-    valid_loader = DataLoader(valid_ds, batch_size=batch_size, collate_fn=image_label_collate, pin_memory=True, num_workers=4)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=image_label_collate, sampler=train_sampler, num_workers=num_workers)
+    valid_loader = DataLoader(valid_ds, batch_size=batch_size, collate_fn=image_label_collate, num_workers=num_workers)
 
-    model = FocalNet(img_size=64, patch_size=1, in_chans=1, num_classes=1, embed_dim=embed_dims_focal, depths=[2, 2, 2, 2], focal_levels=[3, 3, 3, 3], focal_windows=[3, 3, 3, 3])
-    print(model)
-    early_stopping = EarlyStopping(model, 2, os.path.join(extra_path, "focal_checkpoint.pth"))
+    model = FocalNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
+                     embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows)
+
     loss_fn = FocalLoss()
     opt = AdamW(model.parameters(), lr=lr)
+    print(model)
+    checkpoint_name = model.__class__.__name__ + "_" + loss_fn.__class__.__name__
+    early_stopping = EarlyStopping(model, 5, os.path.join(extra_path, f"weights/{checkpoint_name}.pth"))
     epoch_number = 1
     while not early_stopping.early_stop and epochs <= epoch_number:
         m = train_one_epoch(model, opt, loss_fn, train_loader, valid_loader)
