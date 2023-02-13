@@ -1,5 +1,4 @@
 import os
-
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import argparse
@@ -13,10 +12,10 @@ import torch.nn as nn
 from models.focalnet import FocalNet
 import torch
 from monai.losses import FocalLoss
-from monai.transforms import RandGaussianNoise, RandRotate, RandFlip, RandZoom, Compose, RandRicianNoise
-from numpy import deg2rad
 import cv2
 import matplotlib.pyplot as plt
+from tqdm import tqdm
+from inference.inference import test
 
 
 def main():
@@ -32,11 +31,12 @@ def main():
     num_classes = config_dict["num_classes"]
 
     epochs = config_dict["epochs"]
-    lambda_loss = config_dict["lambda_loss"]
     batch_size = config_dict["batch_size"]
     lr = config_dict["lr"]
     num_workers = config_dict["num_workers"]
     do_augmentation = bool(config_dict["do_augmentation"])
+    use_validation = bool(config_dict["use_validation"])
+    validation_ratio = config_dict["validation_ratio"]
 
     unet_embed_dims = list(config_dict["unet_embed_dims"])
 
@@ -51,12 +51,13 @@ def main():
 
     augmentation = None
     if do_augmentation:
-        augmentation = Compose([RandRicianNoise(prob=0.5),
-                                RandRotate(prob=0.5, range_x=deg2rad(90), range_y=deg2rad(90), range_z=deg2rad(90)),
-                                RandFlip(prob=0.5),
-                                RandZoom(prob=0.5)])
+        augmentation = Augmentation()
 
-    train_sub_ses, valid_sub_ses, test_sub_ses = train_valid_test_split(data_path, os.path.join(extra_path, 'data_split'), 0.05)
+    if use_validation:
+        train_sub_ses, valid_sub_ses, test_sub_ses = train_valid_test_split(data_path, os.path.join(extra_path, 'data_split'), validation_ratio, override=True)
+    else:
+        train_sub_ses, _, valid_sub_ses = train_valid_test_split(data_path, os.path.join(extra_path, 'data_split'), 0, override=True)
+
     train_ds = AneurysmDataset(data_path, train_sub_ses, transform=augmentation)
     valid_ds = AneurysmDataset(data_path, valid_sub_ses)
 
@@ -72,7 +73,7 @@ def main():
     model = FocalNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
                      embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows)
 
-    loss_fn = FocalLoss()
+    loss_fn = nn.BCEWithLogitsLoss()
     opt = AdamW(model.parameters(), lr=lr)
     print(model)
     checkpoint_name = model.__class__.__name__ + "_" + loss_fn.__class__.__name__
@@ -87,6 +88,12 @@ def main():
               f"train-specificity:{m['train_cfm'].get_specificity().item()}, valid-specificity:{m['valid_cfm'].get_specificity().item()}")
         early_stopping(m['valid_cfm'].get_mean_loss())
         epoch_number += 1
+
+    if use_validation:
+        checkpoint_path = os.path.join(extra_path, f"weights/{checkpoint_name}.pth")
+        test_ds = AneurysmDataset(data_path, test_sub_ses)
+        test_loader = DataLoader(test_ds, batch_size=batch_size, collate_fn=image_label_collate)
+        test(model, checkpoint_path, test_loader)
 
 
 if __name__ == '__main__':
