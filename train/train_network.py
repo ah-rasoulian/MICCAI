@@ -85,6 +85,7 @@ def main():
               f"train-acc={m['train_cfm'].get_accuracy().item()}, valid-acc={m['valid_cfm'].get_accuracy().item()}\n"
               f"train-recall:{m['train_cfm'].get_recall_sensitivity().item()}, valid-recall:{m['valid_cfm'].get_recall_sensitivity().item()}\n"
               f"train-precision:{m['train_cfm'].get_precision().item()}, valid-precision:{m['valid_cfm'].get_precision().item()}\n"
+              f"train-F1:{m['train_cfm'].get_f1_score().item()}, valid-F1:{m['valid_cfm'].get_f1_score().item()}\n"
               f"train-specificity:{m['train_cfm'].get_specificity().item()}, valid-specificity:{m['valid_cfm'].get_specificity().item()}")
         early_stopping(m['valid_cfm'].get_mean_loss())
         epoch_number += 1
