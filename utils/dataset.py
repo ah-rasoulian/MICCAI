@@ -21,7 +21,7 @@ def find_sub_ses_pairs(data_path: str):
     return all_sub_ses
 
 
-def train_valid_test_split(data_path, out_dir, validation_size):
+def train_valid_test_split(data_path, out_dir, validation_size, override=False):
     train_path = os.path.join(out_dir, f'train-sub-ses.pth')
     valid_path = os.path.join(out_dir, f'valid-sub-ses.pth')
     test_path = os.path.join(out_dir, "test_sub_ses.pth")
@@ -30,7 +30,7 @@ def train_valid_test_split(data_path, out_dir, validation_size):
     with open(test_path, 'rb') as f:
         test_sub_ses = pickle.load(f)
 
-    if os.path.isfile(train_path) and os.path.isfile(valid_path):
+    if os.path.isfile(train_path) and os.path.isfile(valid_path) and not override:
         with open(train_path, 'rb') as f1, open(valid_path, 'rb') as f2:
             train_sub_ses = pickle.load(f1)
             valid_sub_ses = pickle.load(f2)
@@ -120,7 +120,7 @@ class AneurysmDataset(Dataset):
 
         image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
         if self.transform is not None and self.labels[item] != 0:  # only augment positive patches
-            image = self.transform(image)
+            image, mask = self.transform(image, mask)
 
         if image.max() - image.min() > 0:
             image = (image - image.min()) / (image.max() - image.min())  # normalize to 0-1
