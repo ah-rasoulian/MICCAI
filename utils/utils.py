@@ -201,10 +201,10 @@ class Augmentation:
         Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(90), deg2rad(90), deg2rad(90)), translate_range=(0.1, 0.1, 0.1), scale_range=(0.1, 0.1, 0.1)),
                  RandFlip(prob=0.5)])
 
-        self.displacement = Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(90), deg2rad(90), deg2rad(90)), translate_range=(0.1, 0.1, 0.1), scale_range=(0.1, 0.1, 0.1)),
-                                     RandFlip(prob=0.5)])
+        self.displacement = Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(10), deg2rad(10), deg2rad(10)), scale_range=(0.1, 0.1, 0.1)),
+                                     RandFlip(prob=0.5, spatial_axis=1)])
 
-        self.color_change = Compose([RandGaussianNoise(prob=0.5, std=1)])
+        self.color_change = Compose([RandGaussianNoise(prob=0.5, std=20)])
 
         self.augmentation = Compose([
             self.displacement,
