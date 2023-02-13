@@ -336,13 +336,13 @@ class PatchEmbed(nn.Module):
         if use_conv_embed:
             # if we choose to use conv embedding, then we treat the stem and non-stem differently
             if is_stem:
-                kernel_size = 7
-                padding = 2
-                stride = 4
+                kernel_size = patch_size
+                padding = 0
+                stride = patch_size
             else:
-                kernel_size = 3
+                kernel_size = patch_size + 1
                 padding = 1
-                stride = 2
+                stride = patch_size
             self.proj = nn.Conv3d(in_chans, embed_dim, kernel_size=kernel_size, stride=stride, padding=padding)
         else:
             self.proj = nn.Conv3d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
