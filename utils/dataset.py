@@ -8,6 +8,7 @@ from collections import Counter
 from torch.utils.data import Dataset
 import nibabel as nib
 import torch
+from monai.transforms import NormalizeIntensity
 
 
 def find_sub_ses_pairs(data_path: str):
@@ -62,6 +63,7 @@ class AneurysmDataset(Dataset):
         self.labels = []
         self.masks_files = []
         self.transform = transform
+        self.normalize = NormalizeIntensity()
 
         self.read_dataset(root_dir, sub_ses_to_use)
         self.shuffle_dataset()
@@ -122,8 +124,7 @@ class AneurysmDataset(Dataset):
         if self.transform is not None and self.labels[item] != 0:  # only augment positive patches
             image, mask = self.transform(image, mask)
 
-        if image.max() - image.min() > 0:
-            image = (image - image.min()) / (image.max() - image.min())  # normalize to 0-1
+        image = self.normalize(image)
         return image, mask, label
 
 
