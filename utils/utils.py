@@ -6,6 +6,10 @@ import torch.nn.functional as F
 from sklearn import metrics
 from skimage.filters import threshold_otsu
 from monai.metrics.utils import get_mask_edges, get_surface_distance
+from torchvision.transforms import transforms
+from monai.transforms import Compose, RandAffine, RandFlip, RandGaussianNoise
+from numpy import deg2rad
+import random
 
 
 class ConfusionMatrix:
@@ -190,3 +194,32 @@ class FocalBCELoss:
             reduced_bce = bce.mean()
 
         return reduced_bce
+
+
+class Augmentation:
+    def __init__(self):
+        Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(90), deg2rad(90), deg2rad(90)), translate_range=(0.1, 0.1, 0.1), scale_range=(0.1, 0.1, 0.1)),
+                 RandFlip(prob=0.5)])
+
+        self.displacement = Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(90), deg2rad(90), deg2rad(90)), translate_range=(0.1, 0.1, 0.1), scale_range=(0.1, 0.1, 0.1)),
+                                     RandFlip(prob=0.5)])
+
+        self.color_change = Compose([RandGaussianNoise(prob=0.5, std=1)])
+
+        self.augmentation = Compose([
+            self.displacement,
+            self.color_change
+        ])
+
+    def __call__(self, image, mask=None):
+        seed = np.random.randint(123456789)  # make a seed with numpy generator
+        self.augmentation.set_random_state(seed=seed)
+
+        image = self.augmentation(image)
+
+        if mask is not None:
+            self.displacement.set_random_state(seed=seed)
+            mask = self.displacement(mask)
+            return image, mask
+        else:
+            return image
