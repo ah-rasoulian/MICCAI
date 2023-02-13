@@ -1,7 +1,7 @@
 import re
 import os
 import numpy as np
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import train_test_split
 import pickle
 import random
 from collections import Counter
@@ -21,38 +21,39 @@ def find_sub_ses_pairs(data_path: str):
     return all_sub_ses
 
 
-def cross_validation_division(num_folds, out_dir):
-    data_path = r'C:\lausanne-aneurysym-patches\Data_Set_Feb_05_2023_v1-all'
-    patients = find_sub_ses_pairs(os.path.join(data_path, "Positive_Patches"))
-    patients = list(dict.fromkeys(patients))  # removing duplicates
-    all_sub_ses = find_sub_ses_pairs(os.path.join(data_path, "Negative_Patches"))
-    controls = [x for x in all_sub_ses if x not in patients]
-    assert len(all_sub_ses) == len(patients) + len(controls), "the length of all sub-sessions is not equal to controls and patients"
+def train_valid_test_split(data_path, out_dir, validation_size):
+    train_path = os.path.join(out_dir, f'train-sub-ses.pth')
+    valid_path = os.path.join(out_dir, f'valid-sub-ses.pth')
+    test_path = os.path.join(out_dir, "test_sub_ses.pth")
 
-    y = np.zeros(len(patients) + len(controls))
-    y[:len(patients)] = 1
-    x = np.concatenate([np.array(patients), np.array(controls)])
-
-    sub_ses_test_folds = []
-    skf = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=42)
-    for i, (train_index, test_index) in enumerate(skf.split(x, y)):
-        sub_ses_test_folds.append(x[test_index])
-
-    for i in range(num_folds):
-        with open(os.path.join(out_dir, f'fold{i + 1}-test-sub-ses.pth'), 'wb') as file:
-            pickle.dump(sub_ses_test_folds[i], file)
-
-
-def get_train_valid_test_sub_ses(data_path):
-    all_sub_ses = find_sub_ses_pairs(os.path.join(data_path, "Negative_Patches"))
-
-    test_sub_ses = []
-    with open(r"D:\Projects\MICCAI\extra\test_sub_ses.pth", 'rb') as f:
+    # sub450 to sub492 are voxel-wised segmented, so we choose them for test set
+    with open(test_path, 'rb') as f:
         test_sub_ses = pickle.load(f)
 
-    train_val_sub_ses = [x for x in all_sub_ses if x not in test_sub_ses]
+    if os.path.isfile(train_path) and os.path.isfile(valid_path):
+        with open(train_path, 'rb') as f1, open(valid_path, 'rb') as f2:
+            train_sub_ses = pickle.load(f1)
+            valid_sub_ses = pickle.load(f2)
+    else:
+        patients = find_sub_ses_pairs(os.path.join(data_path, "Positive_Patches"))
+        patients = list(dict.fromkeys(patients))  # removing duplicates
+        all_sub_ses = find_sub_ses_pairs(os.path.join(data_path, "Negative_Patches"))
+        controls = [x for x in all_sub_ses if x not in patients]
+        assert len(all_sub_ses) == len(patients) + len(controls), "the length of all sub-sessions is not equal to controls and patients"
 
-    return train_val_sub_ses, test_sub_ses, []
+        train_valid_patients = [x for x in patients if x not in test_sub_ses]
+        train_valid_controls = [x for x in controls if x not in test_sub_ses]
+        y = np.zeros(len(train_valid_patients) + len(train_valid_controls))
+        y[:len(train_valid_patients)] = 1
+        x = np.concatenate([np.array(train_valid_patients), np.array(train_valid_controls)])
+
+        train_sub_ses, valid_sub_ses = train_test_split(x, test_size=validation_size, random_state=42, stratify=y)
+
+        with open(train_path, 'wb') as f1, open(valid_path, 'wb') as f2:
+            pickle.dump(train_sub_ses, f1)
+            pickle.dump(valid_sub_ses, f2)
+
+    return train_sub_ses, valid_sub_ses, test_sub_ses
 
 
 class AneurysmDataset(Dataset):

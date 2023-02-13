@@ -56,21 +56,9 @@ def main():
                                 RandFlip(prob=0.5),
                                 RandZoom(prob=0.5)])
 
-    train_sub_ses, valid_sub_ses, test_sub_ses = get_train_valid_test_sub_ses(data_path)
+    train_sub_ses, valid_sub_ses, test_sub_ses = train_valid_test_split(data_path, os.path.join(extra_path, 'data_split'), 0.05)
     train_ds = AneurysmDataset(data_path, train_sub_ses, transform=augmentation)
-
-    # for i in range(len(train_ds)):
-    #     x, m, y = train_ds[i]
-    #     print(x.min(), x.max())
-    #     if y == 0:
-    #         continue
-    #     cv2.imshow('w', m[32].numpy())
-    #     cv2.imshow('im', x[0, 32].numpy())
-    #     cv2.waitKey()
-    # return
-
     valid_ds = AneurysmDataset(data_path, valid_sub_ses)
-    # test_ds = AneurysmDataset(data_path, test_sub_ses)
 
     labels_counts = Counter(train_ds.labels)
     target_list = torch.tensor(train_ds.labels)
