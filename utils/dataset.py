@@ -65,8 +65,10 @@ class AneurysmDataset(Dataset):
         self.transform = transform
         self.normalize = NormalizeIntensity()
 
+        self.image_affine = None
+        self.mask_affine = None
         self.read_dataset(root_dir, sub_ses_to_use)
-        self.shuffle_dataset()
+        # self.shuffle_dataset()
 
     def read_dataset(self, root_dir, sub_ses_to_use):
         positive_dir_path = os.path.join(root_dir, "Positive_Patches")
@@ -86,6 +88,9 @@ class AneurysmDataset(Dataset):
                         self.labels.append(1)
                         mask_path = patch_path.replace("Positive_Patches", "Positive_Patches_Masks").replace("pos_patch_angio", "mask_patch")
                         self.masks_files.append(mask_path)
+                        if self.image_affine is None or self.mask_affine is None:
+                            self.image_affine = nib.load(patch_path).affine
+                            self.mask_affine = nib.load(mask_path).affine
 
         for folder in os.listdir(negative_dir_path):
             sub = re.findall(r"sub-\d+", folder)[0]
