@@ -198,11 +198,8 @@ class FocalBCELoss:
 
 class Augmentation:
     def __init__(self):
-        Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(90), deg2rad(90), deg2rad(90)), translate_range=(0.1, 0.1, 0.1), scale_range=(0.1, 0.1, 0.1)),
-                 RandFlip(prob=0.5)])
-
         self.displacement = Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(10), deg2rad(10), deg2rad(10)), scale_range=(0.1, 0.1, 0.1)),
-                                     RandFlip(prob=0.5, spatial_axis=1)])
+                                     RandFlip(prob=0.5, spatial_axis=0)])
 
         self.color_change = Compose([RandGaussianNoise(prob=0.5, std=20)])
 
@@ -212,14 +209,13 @@ class Augmentation:
         ])
 
     def __call__(self, image, mask=None):
-        seed = np.random.randint(123456789)  # make a seed with numpy generator
+        seed = self.augmentation.R.randint(0, 123456789)  # make a seed with numpy generator
         self.augmentation.set_random_state(seed=seed)
-
         image = self.augmentation(image)
 
         if mask is not None:
             self.displacement.set_random_state(seed=seed)
-            mask = self.displacement(mask)
+            mask = self.displacement(mask.unsqueeze(0)).squeeze(0)  # to apply a channel and remove it we use unsqueeze and squeeze
             return image, mask
         else:
             return image
