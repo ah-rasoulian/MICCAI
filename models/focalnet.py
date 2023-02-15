@@ -44,7 +44,7 @@ class FocalModulation(nn.Module):
         self.normalize_modulator = normalize_modulator
 
         self.f = nn.Linear(dim, 2 * dim + (self.focal_level + 1), bias=bias)
-        self.h = nn.Conv3d(dim, dim, kernel_size=1, stride=1, bias=bias)
+        self.h = nn.Conv3d(dim, dim, kernel_size=1, stride=1, bias=bias)  # output of h is the modulator
 
         self.act = nn.GELU()
         self.proj = nn.Linear(dim, dim)
@@ -336,13 +336,13 @@ class PatchEmbed(nn.Module):
         if use_conv_embed:
             # if we choose to use conv embedding, then we treat the stem and non-stem differently
             if is_stem:
-                kernel_size = patch_size
+                kernel_size = patch_size[0]
                 padding = 0
-                stride = patch_size
+                stride = patch_size[0]
             else:
-                kernel_size = patch_size + 1
+                kernel_size = patch_size[0] + 1
                 padding = 1
-                stride = patch_size
+                stride = patch_size[0]
             self.proj = nn.Conv3d(in_chans, embed_dim, kernel_size=kernel_size, stride=stride, padding=padding)
         else:
             self.proj = nn.Conv3d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
