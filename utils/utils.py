@@ -10,6 +10,7 @@ from torchvision.transforms import transforms
 from monai.transforms import Compose, RandAffine, RandFlip, RandGaussianNoise
 from numpy import deg2rad
 import random
+import nibabel as nib
 
 
 class ConfusionMatrix:
@@ -219,3 +220,8 @@ class Augmentation:
             return image, mask
         else:
             return image
+
+
+def save_nifti_image(file_path, image, affine):
+    image = nib.Nifti1Image(image.squeeze().cpu().numpy(), affine)
+    nib.save(image, file_path)
