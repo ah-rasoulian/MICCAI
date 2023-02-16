@@ -180,14 +180,15 @@ def load_model(model: nn.Module, path: str):
 
 
 class FocalBCELoss:
-    def __init__(self, gamma=2, reduction='mean'):
+    def __init__(self, gamma=2, alpha=0.5, reduction='mean'):
         self.gamma = gamma
+        self.alpha = alpha
         self.reduction = reduction
 
     def __call__(self, pred, gt):
         sigmoid = torch.sigmoid(pred)
-        bce = -(gt * ((1 - sigmoid) ** self.gamma) * torch.log(sigmoid) +
-                (1 - gt) * (sigmoid ** self.gamma) * torch.log(1 - sigmoid))
+        bce = -(self.alpha * gt * ((1 - sigmoid) ** self.gamma) * torch.log(sigmoid) +
+                (1 - self.alpha) * (1 - gt) * (sigmoid ** self.gamma) * torch.log(1 - sigmoid))
 
         if self.reduction == 'sum':
             reduced_bce = bce.sum()
