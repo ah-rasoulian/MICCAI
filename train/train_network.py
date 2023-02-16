@@ -1,9 +1,12 @@
 import os
+import pickle
+
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import argparse
 import json
 from models.unet import *
+from models.weakfocal import WeakFocalNet3D
 from utils.dataset import *
 from utils.utils import *
 from utils.trainer import *
@@ -16,6 +19,7 @@ import cv2
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from inference.inference import test
+import nibabel as nib
 
 
 def main():
@@ -62,18 +66,19 @@ def main():
     valid_ds = AneurysmDataset(data_path, valid_sub_ses)
 
     labels_counts = Counter(train_ds.labels)
-    target_list = torch.tensor(train_ds.labels)
-    class_weights = torch.FloatTensor([1 / labels_counts[0], 1 / labels_counts[1]])
-    class_weights = class_weights[target_list]
-    train_sampler = WeightedRandomSampler(class_weights, len(class_weights), replacement=True)
+    # target_list = torch.tensor(train_ds.labels)
+    # weights = torch.FloatTensor([1 / labels_counts[0], 1 / labels_counts[1]]) * (labels_counts[0] + labels_counts[1])
+    # class_weights = weights[target_list]
+    # train_sampler = WeightedRandomSampler(class_weights, len(class_weights), replacement=True)
+    # train_sampler = None
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=image_label_collate, sampler=train_sampler, num_workers=num_workers)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=image_label_collate, num_workers=num_workers)
     valid_loader = DataLoader(valid_ds, batch_size=batch_size, collate_fn=image_label_collate, num_workers=num_workers)
 
-    model = FocalNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
-                     embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows)
+    model = WeakFocalNet3D(img_size, focal_patch_size, in_ch, num_classes, focal_embed_dims, focal_depths, focal_levels, focal_windows)
 
-    loss_fn = nn.BCEWithLogitsLoss()
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([labels_counts[0] / labels_counts[1]], device='cuda'))
+    # loss_fn = nn.BCEWithLogitsLoss()
     opt = AdamW(model.parameters(), lr=lr)
     print(model)
     checkpoint_name = model.__class__.__name__ + "_" + loss_fn.__class__.__name__

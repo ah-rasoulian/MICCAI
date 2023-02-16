@@ -517,18 +517,3 @@ class FocalNet(nn.Module):
         flops += self.num_features * self.patches_resolution[0] * self.patches_resolution[1] * self.patches_resolution[2] // (2 ** self.num_layers)
         flops += self.num_features * self.num_classes
         return flops
-
-
-if __name__ == '__main__':
-    img_size = 64
-    x = torch.rand(16, 1, img_size, img_size, img_size).cuda()
-    model = FocalNet(depths=[2, 2, 6, 2], embed_dim=96, focal_levels=[3, 3, 3, 3]).cuda()
-    print(model)
-    y = model(x)
-    print(x.shape, y.shape)
-
-    f = model.flops()
-    print(f"number of GFLOPs: {f / 1e9}")
-
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"number of params: {n_parameters}")
