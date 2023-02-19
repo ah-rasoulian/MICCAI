@@ -76,7 +76,7 @@ def main():
     elif loss_type == "focal":
         loss_fn = FocalBCELoss()
     else:
-        loss_fn = FocalBCELoss(alpha=labels_counts[0] / (labels_counts[1] + labels_counts[0]))
+        loss_fn = FocalBCELoss(alpha=0.66)
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
     lr_scheduler = ReduceLROnPlateau(opt, 'min', factor=0.5)
