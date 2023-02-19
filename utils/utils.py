@@ -187,15 +187,20 @@ class FocalBCELoss:
 
     def __call__(self, pred, gt):
         sigmoid = torch.sigmoid(pred)
-        bce = -(self.alpha * gt * ((1 - sigmoid) ** self.gamma) * torch.log(sigmoid) +
-                (1 - self.alpha) * (1 - gt) * (sigmoid ** self.gamma) * torch.log(1 - sigmoid))
+
+        bce = F.binary_cross_entropy_with_logits(pred, gt, reduction='none')
+        p_t = sigmoid * gt + (1 - sigmoid) * (1 - gt)
+        focal_loss = bce * (1 - p_t) ** self.gamma
+
+        alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
+        focal_loss = alpha_t * focal_loss
 
         if self.reduction == 'sum':
-            reduced_bce = bce.sum()
+            reduced_loss = focal_loss.sum()
         else:
-            reduced_bce = bce.mean()
+            reduced_loss = focal_loss.mean()
 
-        return reduced_bce
+        return reduced_loss
 
 
 class Augmentation:
@@ -203,7 +208,7 @@ class Augmentation:
         self.displacement = Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(10), deg2rad(10), deg2rad(10)), scale_range=(0.1, 0.1, 0.1)),
                                      RandFlip(prob=0.5, spatial_axis=0)])
 
-        self.color_change = Compose([RandGaussianNoise(prob=0.5, std=20)])
+        self.color_change = Compose([RandGaussianNoise(prob=0.5, std=30)])
 
         self.augmentation = Compose([
             self.displacement,
