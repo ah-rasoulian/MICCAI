@@ -58,7 +58,7 @@ def train_valid_test_split(data_path, out_dir, validation_size, override=False):
 
 
 class AneurysmDataset(Dataset):
-    def __init__(self, root_dir, sub_ses_to_use, transform=None):
+    def __init__(self, root_dir, sub_ses_to_use, transform=None, shuffle=True):
         self.images_files = []
         self.labels = []
         self.masks_files = []
@@ -68,7 +68,8 @@ class AneurysmDataset(Dataset):
         self.image_affine = None
         self.mask_affine = None
         self.read_dataset(root_dir, sub_ses_to_use)
-        self.shuffle_dataset()
+        if shuffle:
+            self.shuffle_dataset()
 
     def read_dataset(self, root_dir, sub_ses_to_use):
         positive_dir_path = os.path.join(root_dir, "Positive_Patches")
