@@ -16,6 +16,7 @@ def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, lo
 
         pred = model(sample)
         loss = loss_fn(pred, label)
+        print(loss)
         loss.backward()
         optimizer.step()
 

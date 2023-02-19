@@ -180,9 +180,10 @@ def load_model(model: nn.Module, path: str):
 
 
 class FocalBCELoss:
-    def __init__(self, gamma=2, alpha=0.5, reduction='mean'):
+    def __init__(self, gamma=2, alpha=-1, reduction='mean'):
         self.gamma = gamma
         self.alpha = alpha
+        print(alpha)
         self.reduction = reduction
 
     def __call__(self, pred, gt):
@@ -192,8 +193,9 @@ class FocalBCELoss:
         p_t = sigmoid * gt + (1 - sigmoid) * (1 - gt)
         focal_loss = bce * (1 - p_t) ** self.gamma
 
-        alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
-        focal_loss = alpha_t * focal_loss
+        if self.alpha > 0:
+            alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
+            focal_loss = alpha_t * focal_loss
 
         if self.reduction == 'sum':
             reduced_loss = focal_loss.sum()
