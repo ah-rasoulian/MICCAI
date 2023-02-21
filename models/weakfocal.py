@@ -10,7 +10,7 @@ class WeakFocalNet3D(nn.Module):
         self.num_layers = len(depths)
         features_dims = embed_dims * 2 ** (self.num_layers - 1)
 
-        self.focal_encoder = FocalNet(img_size=img_size, patch_size=patch_size, in_chans=in_ch, embed_dim=embed_dims, depths=depths, num_classes=-1,
+        self.focal_encoder = FocalNet(img_size=img_size, patch_size=patch_size, in_chans=in_ch, embed_dim=embed_dims, depths=depths, num_classes=num_classes,
                                       focal_levels=levels, focal_windows=windows, use_conv_embed=use_conv_embed)
 
         self.modulators_conv_blocks = nn.ModuleDict()
@@ -31,12 +31,7 @@ class WeakFocalNet3D(nn.Module):
                                                                   nn.LayerNorm(features_dims))
         self.head = nn.Linear(features_dims, num_classes)
 
-        # self.modulations = OrderedDict()
-        # for ln, basic_layer in enumerate(self.focal_encoder.layers):
-        #     for bn, focal_block in enumerate(basic_layer.blocks):
-        #         focal_block.modulation.h.register_forward_hook(get_modulations(self.modulations, f'{ln}_{bn}'))
-        #
-        # self.up_sample = nn.Upsample((img_size, img_size, img_size), mode='trilinear')
+        self.up_sample = nn.Upsample((img_size, img_size, img_size), mode='trilinear')
 
     def forward(self, x):
         focal_features = self.focal_encoder.forward_features(x)
@@ -53,32 +48,7 @@ class WeakFocalNet3D(nn.Module):
     def segmentation(self, x):
         y = self.forward(x)
 
-        # mask = torch.ones_like(x) * x
-        # for i in range(3, len(self.depths)):
-        #     mask *= _get_layer_modulation_map(self.modulations, self.up_sample, i, list(range(self.depths[i])))
         mask = torch.abs(self.focal_encoder.layers[-1].blocks[-1].modulation.modulator).mean(1, keepdim=True)
         mask = self.up_sample(mask)
 
         return y, mask.squeeze()
-
-
-def get_modulations(modulation_dict, layer_block):
-    def hook(model, inp, out):
-        modulation_dict[layer_block] = out
-
-    return hook
-
-
-def _get_layer_modulation_map(modulations: dict, up_sample: nn.Upsample, layer: int, blocks: list, device='cuda'):
-    masks = []
-    for block_index in blocks:
-        m = modulations[f'{layer}_{block_index}']
-        m = torch.mean(m, dim=1, keepdim=True)  # mean over channels
-        masks.append(m)
-
-    all_layer_masks = torch.stack(masks, dim=0)
-    avg_layer_mask = torch.mean(all_layer_masks, dim=0)
-
-    # avg_layer_mask = (avg_layer_mask - avg_layer_mask.min()) / (avg_layer_mask.max() - avg_layer_mask.min())  # normalize layer mask
-
-    return up_sample(avg_layer_mask)
