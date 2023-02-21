@@ -30,11 +30,14 @@ def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, lo
         optimizer.step()
 
         _metrics["train_cfm"].add_loss(loss)
+        _metrics["train_cfm"].add_number_of_samples(len(target))
         if train_type == 'multitask':
             _metrics["train_cfm"].add_prediction(pred, target)
             _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+            _metrics["train_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
         elif train_type == 'segmentation':
             _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+            _metrics["train_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
         else:
             _metrics["train_cfm"].add_prediction(pred, target)
 
@@ -45,7 +48,7 @@ def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, lo
     pbar_valid = tqdm(enumerate(valid_loader), total=len(valid_loader), leave=False)
     pbar_valid.set_description('validating')
     with torch.no_grad():
-        for i, (sample, target) in pbar_valid:
+        for i, (sample, target_mask, target) in pbar_valid:
             sample, target_mask, target = sample.to(device), target_mask.to(device), target.to(device)
 
             pred = model(sample)
@@ -58,11 +61,14 @@ def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, lo
                 loss = loss_fn(pred, target)
 
             _metrics["valid_cfm"].add_loss(loss)
+            _metrics["valid_cfm"].add_number_of_samples(len(target))
             if train_type == 'multitask':
                 _metrics["valid_cfm"].add_prediction(pred, target)
                 _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+                _metrics["valid_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
             elif train_type == 'segmentation':
                 _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+                _metrics["valid_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
             else:
                 _metrics["valid_cfm"].add_prediction(pred, target)
 

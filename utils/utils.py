@@ -35,7 +35,6 @@ class ConfusionMatrix:
         pred = torch.round(torch.sigmoid(pred))
         self.predictions.extend(list(pred.detach()))
         self.ground_truth.extend(list(gt.detach()))
-        self.add_number_of_samples(len(gt))
 
     def add_number_of_samples(self, new_samples):
         self.number_of_samples += new_samples
@@ -56,6 +55,7 @@ class ConfusionMatrix:
         self.hausdorff_distances.extend(list(hd))
 
     def get_mean_dice(self):
+        print(self.number_of_samples, len(self.dices))
         return torch.nanmean(torch.tensor(self.dices))
 
     def get_mean_iou(self):
@@ -253,5 +253,18 @@ def dice_metric(predicted_mask, gt_mask):
     predicted_mask = predicted_mask.flatten(1)
     gt_mask = gt_mask.flatten(1)
 
-    overlap = torch.sum(predicted_mask * gt_mask, dim=1)
-    return (2. * overlap) / (torch.sum(predicted_mask, dim=1) + torch.sum(gt_mask, dim=1))
+    intersection = torch.sum(predicted_mask * gt_mask, dim=1)
+    summation = torch.sum(predicted_mask, dim=1) + torch.sum(gt_mask, dim=1)
+    return (2. * intersection) / summation
+
+
+def intersection_over_union_metric(predicted_mask, gt_mask):
+    predicted_mask = torch.round(torch.sigmoid(predicted_mask)).detach()
+    gt_mask = gt_mask.detach()
+
+    predicted_mask = predicted_mask.flatten(1)
+    gt_mask = gt_mask.flatten(1)
+
+    intersection = torch.sum(predicted_mask * gt_mask, dim=1)
+    union = torch.sum(predicted_mask, dim=1) + torch.sum(gt_mask, dim=1) - intersection
+    return intersection / union

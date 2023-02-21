@@ -116,7 +116,8 @@ def main():
                   f"train-F1:{m['train_cfm'].get_f1_score().item()}, valid-F1:{m['valid_cfm'].get_f1_score().item()}\n"
                   f"train-specificity:{m['train_cfm'].get_specificity().item()}, valid-specificity:{m['valid_cfm'].get_specificity().item()}")
         if setup in ["segmentation", "multitask"]:
-            print(f"train-dice={m['train_cfm'].get_mean_dice()}, valid-dice={m['valid_cfm'].get_mean_dice()}")
+            print(f"train-dice={m['train_cfm'].get_mean_dice()}, valid-dice={m['valid_cfm'].get_mean_dice()}\n"
+                  f"train-dice={m['train_cfm'].get_mean_iou()}, valid-dice={m['valid_cfm'].get_mean_iou()}")
 
         early_stopping(val_loss)
         scheduler.step(val_loss)
