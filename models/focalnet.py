@@ -173,19 +173,19 @@ class FocalNetBlock(nn.Module):
             self.gamma_1 = nn.Parameter(layerscale_value * torch.ones((dim)), requires_grad=True)
             self.gamma_2 = nn.Parameter(layerscale_value * torch.ones((dim)), requires_grad=True)
 
+        self.D = None
         self.H = None
         self.W = None
-        self.D = None
 
     def forward(self, x):
-        H, W, D = self.H, self.W, self.D
+        D, H, W = self.D, self.H, self.W
         B, L, C = x.shape
         shortcut = x
 
         # Focal Modulation
         x = x if self.use_postln else self.norm1(x)
-        x = x.view(B, H, W, D, C)
-        x = self.modulation(x).view(B, H * W * D, C)
+        x = x.view(B, D, H, W, C)
+        x = self.modulation(x).view(B, D * H * W, C)
         x = x if not self.use_postln else self.norm1(x)
 
         # FFN
@@ -200,17 +200,17 @@ class FocalNetBlock(nn.Module):
 
     def flops(self):
         flops = 0
-        H, W, D = self.input_resolution
+        D, H, W = self.input_resolution
         # norm1
-        flops += self.dim * H * W * D
+        flops += self.dim * D * H * W
 
         # W-MSA/SW-MSA
-        flops += self.modulation.flops(H * W * D)
+        flops += self.modulation.flops(D * H * W)
 
         # mlp
-        flops += 2 * H * W * D * self.dim * self.dim * self.dim * self.mlp_ratio
+        flops += 2 * D * H * W * self.dim * self.dim * self.dim * self.mlp_ratio
         # norm2
-        flops += self.dim * H * W * D
+        flops += self.dim * D * H * W
         return flops
 
 
@@ -284,20 +284,20 @@ class BasicLayer(nn.Module):
         else:
             self.downsample = None
 
-    def forward(self, x, H, W, D):
+    def forward(self, x, D, H, W):
         for blk in self.blocks:
-            blk.H, blk.W, blk.D = H, W, D
+            blk.D, blk.H, blk.W = D, H, W
             if self.use_checkpoint:
                 x = checkpoint.checkpoint(blk, x)
             else:
                 x = blk(x)
 
         if self.downsample is not None:
-            x = x.transpose(1, 2).reshape(x.shape[0], -1, H, W, D)
-            x, Ho, Wo, Do = self.downsample(x)
+            x = x.transpose(1, 2).reshape(x.shape[0], -1, D, H, W)
+            x, Do, Ho, Wo = self.downsample(x)
         else:
-            Ho, Wo, Do = H, W, D
-        return x, Ho, Wo, Do
+            Do, Ho, Wo = D, H, W
+        return x, Do, Ho, Wo
 
     def extra_repr(self) -> str:
         return f"dim={self.dim}, input_resolution={self.input_resolution}, depth={self.depth}"
@@ -353,18 +353,18 @@ class PatchEmbed(nn.Module):
             self.norm = None
 
     def forward(self, x):
-        B, C, H, W, D = x.shape
+        B, C, D, H, W = x.shape
 
         x = self.proj(x)
-        H, W, D = x.shape[2:]
+        D, H, W = x.shape[2:]
         x = x.flatten(2).transpose(1, 2)  # B Ph*Pw*Pd C
         if self.norm is not None:
             x = self.norm(x)
-        return x, H, W, D
+        return x, D, H, W
 
     def flops(self):
-        Ho, Wo, Do = self.patches_resolution
-        flops = Ho * Wo * Do * self.embed_dim * self.in_chans * (self.patch_size[0] * self.patch_size[1] * self.patch_size[2])
+        Do, Ho, Wo = self.patches_resolution
+        flops = Do, Ho * Wo * self.embed_dim * self.in_chans * (self.patch_size[0] * self.patch_size[1] * self.patch_size[2])
         if self.norm is not None:
             flops += Ho * Wo * Do * self.embed_dim
         return flops
@@ -494,11 +494,11 @@ class FocalNet(nn.Module):
         return {''}
 
     def forward_features(self, x):
-        x, H, W, D = self.patch_embed(x)
+        x, D, H, W = self.patch_embed(x)
         x = self.pos_drop(x)
 
         for layer in self.layers:
-            x, H, W, D = layer(x, H, W, D)
+            x, D, H, W = layer(x, D, H, W)
         x = self.norm(x)  # B L C
         x = self.avgpool(x.transpose(1, 2))  # B C 1
         x = torch.flatten(x, 1)
