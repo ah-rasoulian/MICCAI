@@ -254,7 +254,7 @@ def dice_metric(predicted_mask, gt_mask):
 
     intersection = torch.sum(predicted_mask * gt_mask, dim=1)
     summation = torch.sum(predicted_mask, dim=1) + torch.sum(gt_mask, dim=1)
-    return (2. * intersection) / summation
+    return torch.divide(2. * intersection, summation)
 
 
 def intersection_over_union_metric(predicted_mask, gt_mask):
@@ -266,4 +266,4 @@ def intersection_over_union_metric(predicted_mask, gt_mask):
 
     intersection = torch.sum(predicted_mask * gt_mask, dim=1)
     union = torch.sum(predicted_mask, dim=1) + torch.sum(gt_mask, dim=1) - intersection
-    return intersection / union
+    return torch.divide(intersection, union)
