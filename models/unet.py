@@ -15,14 +15,13 @@ class UNet3D(nn.Module):
             encoder[f'pool-{i + 1}'] = nn.MaxPool3d(kernel_size=2, stride=2)
         self.encoder = nn.ModuleDict(encoder)
 
-        self.bottle_neck = ConvBlock(in_ch=self.embed_dims[-2], out_ch=self.embed_dims[-1], kernel_size=3)
+        self.bottleneck = ConvBlock(in_ch=self.embed_dims[-2], out_ch=self.embed_dims[-1], kernel_size=3)
 
         self.embed_dims.reverse()
         decoder = OrderedDict()
         for i in range(len(self.embed_dims) - 1):
-            decoder[f'up-{i + 1}'] = nn.Sequential(nn.Upsample(scale_factor=(2, 2, 2)),
-                                                   nn.Conv3d(in_channels=self.embed_dims[i], out_channels=self.embed_dims[i + 1], kernel_size=2, padding='same'))
-            decoder[f'expansive-{i + 1}'] = ConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3)
+            decoder[f'up-{i + 1}'] = nn.ConvTranspose3d(in_channels=self.embed_dims[i], out_channels=self.embed_dims[i + 1], kernel_size=3, stride=2, padding=1, output_padding=1)
+            decoder[f'expansive-{i + 1}'] = ConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3, droprate=0.2)
         self.decoder = nn.ModuleDict(decoder)
 
         self.output = nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same')
@@ -34,7 +33,7 @@ class UNet3D(nn.Module):
             residuals.append(x)
             x = self.encoder[f'pool-{i + 1}'](x)
 
-        x = self.bottle_neck(x)
+        x = self.bottleneck(x)
 
         residuals.reverse()
         for i in range(len(self.embed_dims) - 1):
@@ -46,13 +45,41 @@ class UNet3D(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size):
+    def __init__(self, in_ch, out_ch, kernel_size, droprate=0.0):
         super().__init__()
         self.block = nn.Sequential(nn.Conv3d(in_ch, out_ch, kernel_size, padding='same'),
                                    nn.ReLU(),
                                    nn.Conv3d(out_ch, out_ch, kernel_size, padding='same'),
                                    nn.ReLU(),
-                                   nn.BatchNorm3d(num_features=out_ch))
+                                   nn.BatchNorm3d(num_features=out_ch),
+                                   nn.Dropout3d(droprate)
+                                   )
 
     def forward(self, x):
         return self.block(x)
+
+
+class MultiTaskUNet3D(nn.Module):
+    def __init__(self, in_ch, num_classes, embed_dims, classification_droprate=0.2):
+        super().__init__()
+        self.num_features = embed_dims[-1]
+
+        self.unet = UNet3D(in_ch, num_classes, embed_dims)
+
+        self.intermediates = {}
+        self.unet.bottleneck.register_forward_hook(get_intermediate_layer_output(self.intermediates, "bottleneck"))
+
+        self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
+                                                 nn.Flatten(1),
+                                                 nn.Dropout(classification_droprate),
+                                                 nn.Linear(self.num_features, num_classes))
+
+    def forward(self, x):
+        pred_mask = self.unet(x)
+        return self.classification_head(self.intermediates["bottleneck"]), pred_mask
+
+
+def get_intermediate_layer_output(saved_dict, layer_name):
+    def hook(model, inp, out):
+        saved_dict[layer_name] = out
+    return hook
