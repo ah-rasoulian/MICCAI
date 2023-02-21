@@ -136,28 +136,3 @@ class AneurysmDataset(Dataset):
 
         image = self.normalize(image)
         return image, mask, label
-
-
-class CustomBatch:
-    def __init__(self, data, only_label: bool):
-        transposed_data = list(zip(*data))
-        self.input = torch.stack(transposed_data[0], 0)
-        if only_label:
-            self.target = torch.stack(transposed_data[2], 0)
-        else:
-            self.target = torch.stack(transposed_data[1], 0)
-
-    def pin_memory(self):
-        self.input = self.input.pin_memory()
-        self.target = self.target.pin_memory()
-        return self
-
-
-def image_label_collate(batch):
-    batch = CustomBatch(batch, True)
-    return [batch.input, batch.target]
-
-
-def image_mask_collate(batch):
-    batch = CustomBatch(batch, False)
-    return [batch.input, batch.target]
