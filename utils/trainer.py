@@ -29,7 +29,7 @@ def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, lo
         loss.backward()
         optimizer.step()
 
-        _metrics["train_cfm"].add_loss(loss.item())
+        _metrics["train_cfm"].add_loss(loss)
         if train_type == 'multitask':
             _metrics["train_cfm"].add_prediction(pred, target)
             _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
@@ -57,7 +57,7 @@ def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, lo
             else:
                 loss = loss_fn(pred, target)
 
-            _metrics["valid_cfm"].add_loss(loss.item())
+            _metrics["valid_cfm"].add_loss(loss)
             if train_type == 'multitask':
                 _metrics["valid_cfm"].add_prediction(pred, target)
                 _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, target_mask))

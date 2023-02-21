@@ -1,25 +1,25 @@
 {
+  "model": "multitaskfocalunet",
   "img_size": 64,
   "in_ch": 1,
   "num_classes": 1,
 
   "epochs": -1,
-  "batch_size": 12,
+  "batch_size": 16,
   "lr": 0.0001,
-  "loss_fn": "bce",
   "num_workers": 4,
   "do_augmentation": "True",
   "do_sampling": "True",
   "use_validation": "True",
   "validation_ratio": 0.05,
 
-  "unet_embed_dims": [9, 26, 61, 74],
+  "unet_embed_dims": [64, 128, 256, 512],
 
   "focal_patch_size": 2,
-  "focal_embed_dims": 64,
-  "focal_depths": [2, 2, 2, 2],
-  "focal_levels": [2, 2, 2, 2],
-  "focal_windows": [3, 3, 3, 3],
+  "focal_embed_dims": 32,
+  "focal_depths": [2, 2, 2],
+  "focal_levels": [3, 3, 3],
+  "focal_windows": [3, 3, 3],
 
   "data_path": "C:\\lausanne-aneurysym-patches\\Data_Set_Feb_05_2023_v1-all",
   "extra_path": "extra\\"
