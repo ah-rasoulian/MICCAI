@@ -32,15 +32,16 @@ class ConfusionMatrix:
         self.hausdorff_distances = []
 
     def add_prediction(self, pred, gt):
-        self.predictions.extend(list(pred))
-        self.ground_truth.extend(list(gt))
+        pred = torch.round(torch.sigmoid(pred))
+        self.predictions.extend(list(pred.detach()))
+        self.ground_truth.extend(list(gt.detach()))
         self.add_number_of_samples(len(gt))
 
     def add_number_of_samples(self, new_samples):
         self.number_of_samples += new_samples
 
     def add_loss(self, loss):
-        self.losses.append(loss)
+        self.losses.append(loss.item())
 
     def get_mean_loss(self):
         return sum(self.losses) / self.number_of_samples
@@ -67,11 +68,10 @@ class ConfusionMatrix:
         self.predictions = torch.stack(self.predictions).to(self.device)
         self.ground_truth = torch.stack(self.ground_truth).to(self.device)
 
-        pred_out = torch.round(self.predictions)
-        self.true_positives = torch.sum(pred_out * self.ground_truth, dim=0)
-        self.true_negatives = torch.sum((1 - pred_out) * (1 - self.ground_truth), dim=0)
-        self.false_positives = torch.sum(pred_out * (1 - self.ground_truth), dim=0)
-        self.false_negatives = torch.sum((1 - pred_out) * self.ground_truth, dim=0)
+        self.true_positives = torch.sum(self.predictions * self.ground_truth, dim=0)
+        self.true_negatives = torch.sum((1 - self.predictions) * (1 - self.ground_truth), dim=0)
+        self.false_positives = torch.sum(self.predictions * (1 - self.ground_truth), dim=0)
+        self.false_negatives = torch.sum((1 - self.predictions) * self.ground_truth, dim=0)
 
     def get_accuracy(self):
         numerator = self.true_positives + self.true_negatives
@@ -105,12 +105,39 @@ class ConfusionMatrix:
 
         return torch.divide(numerator, denominator)
 
+    # todo: fix it
     def get_auc_score(self):
         scores = []
         for i in range(self.ground_truth.shape[-1]):
             scores.append(metrics.roc_auc_score(self.ground_truth[:, 0, i].cpu().numpy(),
                                                 self.predictions[:, 0, i].cpu().numpy()))
         return np.array(scores)
+
+
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2, alpha=-1, reduction='mean'):
+        super().__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.reduction = reduction
+
+    def forward(self, pred, gt):
+        sigmoid = torch.sigmoid(pred)
+
+        bce = F.binary_cross_entropy_with_logits(pred, gt, reduction='none')
+        p_t = sigmoid * gt + (1 - sigmoid) * (1 - gt)
+        focal_loss = bce * (1 - p_t) ** self.gamma
+
+        if self.alpha > 0:
+            alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
+            focal_loss = alpha_t * focal_loss
+
+        if self.reduction == 'sum':
+            reduced_loss = focal_loss.sum()
+        else:
+            reduced_loss = focal_loss.mean()
+
+        return reduced_loss
 
 
 class DiceLoss(nn.Module):
@@ -132,16 +159,26 @@ class DiceLoss(nn.Module):
 
 
 class DiceBCELoss(nn.Module):
-    def __init__(self):
+    def __init__(self, smooth=1):
         super(DiceBCELoss, self).__init__()
-        self.dice = DiceLoss()
+        self.dice = DiceLoss(smooth)
 
-    def forward(self, inputs, targets, smooth=1):
-        dice_loss = self.dice(inputs, targets, smooth)
-        BCE = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
-        Dice_BCE = BCE + dice_loss
+    def forward(self, inputs, targets):
+        dice_loss = self.dice(inputs, targets)
+        bce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
+        return bce_loss + dice_loss
 
-        return Dice_BCE
+
+class DiceFocalLoss(nn.Module):
+    def __init__(self, smooth=1):
+        super(DiceFocalLoss, self).__init__()
+        self.dice = DiceLoss(smooth)
+        self.focal = FocalLoss()
+
+    def forward(self, inputs, targets):
+        dice_loss = self.dice(inputs, targets)
+        focal_bce = self.focal(inputs, targets)
+        return dice_loss + focal_bce
 
 
 class EarlyStopping:
@@ -179,32 +216,6 @@ def load_model(model: nn.Module, path: str):
     model.load_state_dict(torch.load(path))
 
 
-class FocalBCELoss:
-    def __init__(self, gamma=2, alpha=-1, reduction='mean'):
-        self.gamma = gamma
-        self.alpha = alpha
-        print(alpha)
-        self.reduction = reduction
-
-    def __call__(self, pred, gt):
-        sigmoid = torch.sigmoid(pred)
-
-        bce = F.binary_cross_entropy_with_logits(pred, gt, reduction='none')
-        p_t = sigmoid * gt + (1 - sigmoid) * (1 - gt)
-        focal_loss = bce * (1 - p_t) ** self.gamma
-
-        if self.alpha > 0:
-            alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
-            focal_loss = alpha_t * focal_loss
-
-        if self.reduction == 'sum':
-            reduced_loss = focal_loss.sum()
-        else:
-            reduced_loss = focal_loss.mean()
-
-        return reduced_loss
-
-
 class Augmentation:
     def __init__(self):
         self.displacement = Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(10), deg2rad(10), deg2rad(10)), scale_range=(0.1, 0.1, 0.1)),
@@ -224,7 +235,7 @@ class Augmentation:
 
         if mask is not None:
             self.displacement.set_random_state(seed=seed)
-            mask = self.displacement(mask.unsqueeze(0)).squeeze(0)  # to apply a channel and remove it we use unsqueeze and squeeze
+            mask = self.displacement(mask)
             return image, mask
         else:
             return image
@@ -233,3 +244,14 @@ class Augmentation:
 def save_nifti_image(file_path, image, affine):
     image = nib.Nifti1Image(image.squeeze().cpu().numpy(), affine)
     nib.save(image, file_path)
+
+
+def dice_metric(predicted_mask, gt_mask):
+    predicted_mask = torch.round(torch.sigmoid(predicted_mask)).detach()
+    gt_mask = gt_mask.detach()
+
+    predicted_mask = predicted_mask.flatten(1)
+    gt_mask = gt_mask.flatten(1)
+
+    overlap = torch.sum(predicted_mask * gt_mask, dim=1)
+    return (2. * overlap) / (torch.sum(predicted_mask, dim=1) + torch.sum(gt_mask, dim=1))
