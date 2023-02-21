@@ -55,7 +55,6 @@ class ConfusionMatrix:
         self.hausdorff_distances.extend(list(hd))
 
     def get_mean_dice(self):
-        print(self.number_of_samples, len(self.dices))
         return torch.nanmean(torch.tensor(self.dices))
 
     def get_mean_iou(self):
