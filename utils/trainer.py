@@ -3,92 +3,70 @@ from utils.utils import *
 from tqdm import tqdm
 
 
-def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loss_fn, train_loader, valid_loader, device='cuda'):
+def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loss_fn, train_loader, valid_loader, device='cuda', train_type='classification'):
+    assert train_type in ['classification', 'segmentation', 'multitask'], "train type not suppoerted"
+    if train_type == 'multitask':
+        assert type(loss_fn) is tuple
+        alpha, classification_loss, segmentation_loss = loss_fn
+        assert 0 <= alpha <= 1
     model.to(device)
     model.train()
     pbar_train = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
     pbar_train.set_description('training')
     _metrics = {"train_cfm": ConfusionMatrix(), "valid_cfm": ConfusionMatrix()}
-
-    for i, (sample, label) in pbar_train:
+    for i, (sample, target_mask, target) in pbar_train:
         optimizer.zero_grad()
-        sample, label = sample.to(device), label.to(device)
+        sample, target_mask, target = sample.to(device), target_mask.to(device), target.to(device)
 
         pred = model(sample)
-        loss = loss_fn(pred, label)
+        if train_type == 'multitask':
+            pred, pred_mask = pred
+            loss = alpha * classification_loss(pred, target) + (1 - alpha) * segmentation_loss(pred_mask, target_mask)
+        elif train_type == 'segmentation':
+            loss = loss_fn(pred, target_mask)
+        else:
+            loss = loss_fn(pred, target)
         loss.backward()
         optimizer.step()
 
         _metrics["train_cfm"].add_loss(loss.item())
-        _metrics["train_cfm"].add_prediction(torch.sigmoid(pred), label)
+        if train_type == 'multitask':
+            _metrics["train_cfm"].add_prediction(pred, target)
+            _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+        elif train_type == 'segmentation':
+            _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+        else:
+            _metrics["train_cfm"].add_prediction(pred, target)
 
-    _metrics["train_cfm"].compute_confusion_matrix()
-
-    model.eval()
-    pbar_valid = tqdm(enumerate(valid_loader), total=len(valid_loader), leave=False)
-    pbar_valid.set_description('validating')
-
-    with torch.no_grad():
-        for i, (sample, label) in pbar_valid:
-            sample, label = sample.to(device), label.to(device)
-
-            pred = model(sample)
-            loss = loss_fn(pred, label)
-
-            _metrics["valid_cfm"].add_loss(loss.item())
-            _metrics["valid_cfm"].add_prediction(torch.sigmoid(pred), label)
-
-        _metrics["valid_cfm"].compute_confusion_matrix()
-
-    return _metrics
-
-
-def train_one_epoch_segmentation(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loss_fn, train_loader, valid_loader, device='cuda', augmentation=None):
-    model.to(device)
-    model.train()
-    pbar_train = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
-    pbar_train.set_description('training')
-    _metrics = {"train_cfm": ConfusionMatrix(), "valid_cfm": ConfusionMatrix()}
-
-    for i, (sample, label) in pbar_train:
-        if not label.any():
-            continue
-        optimizer.zero_grad()
-        sample, label = sample.to(device), label.to(device)
-        if augmentation:
-            sample, label = augmentation(sample, label)
-
-        pred = model(sample)
-        loss = loss_fn(pred.squeeze(1), label)
-
-        loss.backward()
-        optimizer.step()
-        pred_mask = torch.round(torch.sigmoid(pred.squeeze(1)))
-
-        _metrics["train_cfm"].add_loss(loss.item())
-        _metrics["train_cfm"].add_number_of_samples(len(label))
-        _metrics["train_cfm"].add_dice(dice_metric(pred_mask, label))
-        _metrics["train_cfm"].add_iou(intersection_over_union(pred_mask, label))
-        _metrics["train_cfm"].add_hausdorff_distance(hausdorff_distance(pred_mask, label))
+    if train_type in ['multitask', 'classification']:
+        _metrics["train_cfm"].compute_confusion_matrix()
 
     model.eval()
     pbar_valid = tqdm(enumerate(valid_loader), total=len(valid_loader), leave=False)
     pbar_valid.set_description('validating')
-
     with torch.no_grad():
-        for i, (sample, label) in pbar_valid:
-            if not label.any():
-                continue
-            sample, label = sample.to(device), label.to(device)
+        for i, (sample, target) in pbar_valid:
+            sample, target_mask, target = sample.to(device), target_mask.to(device), target.to(device)
 
             pred = model(sample)
-            loss = loss_fn(pred.squeeze(1), label)
-            pred_mask = torch.round(torch.sigmoid(pred.squeeze(1)))
+            if train_type == 'multitask':
+                pred, pred_mask = pred
+                loss = alpha * classification_loss(pred, target) + (1 - alpha) * segmentation_loss(pred_mask, target_mask)
+            elif train_type == 'segmentation':
+                loss = loss_fn(pred, target_mask)
+            else:
+                loss = loss_fn(pred, target)
 
             _metrics["valid_cfm"].add_loss(loss.item())
-            _metrics["valid_cfm"].add_number_of_samples(len(label))
-            _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, label))
-            _metrics["valid_cfm"].add_iou(intersection_over_union(pred_mask, label))
-            _metrics["valid_cfm"].add_hausdorff_distance(hausdorff_distance(pred_mask, label))
+            if train_type == 'multitask':
+                _metrics["valid_cfm"].add_prediction(pred, target)
+                _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+            elif train_type == 'segmentation':
+                _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+            else:
+                _metrics["valid_cfm"].add_prediction(pred, target)
+
+        if train_type in ['multitask', 'classification']:
+            _metrics["valid_cfm"].compute_confusion_matrix()
 
     return _metrics
