@@ -10,7 +10,7 @@ class WeakFocalNet3D(nn.Module):
         self.num_layers = len(depths)
         features_dims = embed_dims * 2 ** (self.num_layers - 1)
 
-        self.focal_encoder = FocalNet(img_size=img_size, patch_size=patch_size, in_chans=in_ch, embed_dim=embed_dims, depths=depths, num_classes=num_classes,
+        self.focal_encoder = FocalNet(img_size=img_size, patch_size=patch_size, in_chans=in_ch, embed_dim=embed_dims, depths=depths, num_classes=-1,
                                       focal_levels=levels, focal_windows=windows, use_conv_embed=use_conv_embed)
 
         self.modulators_conv_blocks = nn.ModuleDict()
