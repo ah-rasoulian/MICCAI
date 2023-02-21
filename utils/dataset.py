@@ -127,6 +127,7 @@ class AneurysmDataset(Dataset):
         label = torch.FloatTensor([self.labels[item]])
 
         image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
+        mask = mask.unsqueeze(0)  # to add a channel -> ch, h, w, d
         if self.transform is not None:
             if self.labels[item] != 0:
                 image, mask = self.transform(image, mask)
