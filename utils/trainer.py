@@ -6,7 +6,7 @@ from tqdm import tqdm
 def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loss_fn, train_loader, valid_loader, device='cuda', train_type='classification'):
     assert train_type in ['classification', 'segmentation', 'multitask'], "train type not suppoerted"
     if train_type == 'multitask':
-        assert type(loss_fn) is tuple
+        assert type(loss_fn) is tuple and len(loss_fn) == 3
         alpha, classification_loss, segmentation_loss = loss_fn
         assert 0 <= alpha <= 1
     model.to(device)
