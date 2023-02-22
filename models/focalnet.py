@@ -517,3 +517,57 @@ class FocalNet(nn.Module):
         flops += self.num_features * self.patches_resolution[0] * self.patches_resolution[1] * self.patches_resolution[2] // (2 ** self.num_layers)
         flops += self.num_features * self.num_classes
         return flops
+
+
+class PatchExtend(nn.Module):
+    r""" Image to Patch Embedding
+    Args:
+        img_size (int): Image size.  Default: 224.
+        patch_size (int): Patch token size. Default: 4.
+        in_chans (int): Number of input image channels. Default: 3.
+        embed_dim (int): Number of linear projection output channels. Default: 96.
+        norm_layer (nn.Module, optional): Normalization layer. Default: None
+    """
+
+    def __init__(self, img_size=(64, 64, 64), patch_size=2, in_chans=1, embed_dim=96, use_conv_embed=False, norm_layer=None, is_stem=False):
+        super().__init__()
+        patch_size = to_3tuple(patch_size)
+        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1], img_size[2] // patch_size[2]]
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.patches_resolution = patches_resolution
+        self.num_patches = patches_resolution[0] * patches_resolution[1] * patches_resolution[2]
+
+        self.in_chans = in_chans
+        self.embed_dim = embed_dim
+
+        if use_conv_embed:
+            # if we choose to use conv embedding, then we treat the stem and non-stem differently
+            if is_stem:
+                kernel_size = patch_size[0]
+                padding = 0
+                out_padding = 0
+                stride = patch_size[0]
+            else:
+                kernel_size = patch_size[0] + 1
+                padding = 1
+                out_padding = 1
+                stride = patch_size[0]
+            self.proj = nn.ConvTranspose3d(in_chans, embed_dim, kernel_size=kernel_size, stride=stride, padding=padding, output_padding=out_padding)
+        else:
+            self.proj = nn.ConvTranspose3d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
+
+        if norm_layer is not None:
+            self.norm = norm_layer(embed_dim)
+        else:
+            self.norm = None
+
+    def forward(self, x):
+        B, C, D, H, W = x.shape
+
+        x = self.proj(x)
+        D, H, W = x.shape[2:]
+        x = x.flatten(2).transpose(1, 2)  # B Pd*Ph*Pw C
+        if self.norm is not None:
+            x = self.norm(x)
+        return x, D, H, W
