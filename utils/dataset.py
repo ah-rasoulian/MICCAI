@@ -129,10 +129,7 @@ class AneurysmDataset(Dataset):
         image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
         mask = mask.unsqueeze(0)  # to add a channel -> ch, h, w, d
         if self.transform is not None:
-            if self.labels[item] != 0:
-                image, mask = self.transform(image, mask)
-            else:
-                image = self.transform(image)
+            image, mask = self.transform(image, mask)
 
         image = self.normalize(image)
         return image, mask, label
