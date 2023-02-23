@@ -238,7 +238,7 @@ class Augmentation:
         self.augmentation = Compose([
             RandAffineD(prob=0.5, rotate_range=(deg2rad(10), deg2rad(10), deg2rad(10)), scale_range=(0.1, 0.1, 0.1), keys=['image', 'mask']),
             RandFlipD(prob=0.5, keys=['image', 'mask']),
-            [RandGaussianNoiseD(prob=1, keys=['image'])]
+            RandGaussianNoiseD(prob=1, keys=['image']),
         ])
 
     def __call__(self, image, mask):
