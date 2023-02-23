@@ -9,6 +9,7 @@ from torch.utils.data import Dataset
 import nibabel as nib
 import torch
 from monai.transforms import NormalizeIntensity
+import torch.nn as nn
 
 
 def find_sub_ses_pairs(data_path: str):
@@ -58,11 +59,12 @@ def train_valid_test_split(data_path, out_dir, validation_size, override=False):
 
 
 class AneurysmDataset(Dataset):
-    def __init__(self, root_dir, sub_ses_to_use, transform=None, shuffle=True):
+    def __init__(self, root_dir, sub_ses_to_use, transform=None, shrink_masks=False, shuffle=True):
         self.images_files = []
         self.labels = []
         self.masks_files = []
         self.transform = transform
+        self.threshold_mask = nn.Threshold(0.5, 0) if shrink_masks else None
         self.normalize = NormalizeIntensity()
 
         self.image_affine = None
@@ -132,4 +134,9 @@ class AneurysmDataset(Dataset):
             image, mask = self.transform(image, mask)
 
         image = self.normalize(image)
+
+        image = (image - image.min()) / (image.max() - image.min())
+        if self.threshold_mask and label == 1:
+            mask = mask * self.threshold_mask(image)
+
         return image, mask, label
