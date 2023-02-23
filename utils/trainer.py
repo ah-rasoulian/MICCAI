@@ -36,8 +36,8 @@ def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, lo
             _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
             _metrics["train_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
         elif train_type == 'segmentation':
-            _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
-            _metrics["train_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
+            _metrics["train_cfm"].add_dice(dice_metric(pred, target_mask))
+            _metrics["train_cfm"].add_iou(intersection_over_union_metric(pred, target_mask))
         else:
             _metrics["train_cfm"].add_prediction(pred, target)
 
@@ -67,8 +67,8 @@ def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, lo
                 _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, target_mask))
                 _metrics["valid_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
             elif train_type == 'segmentation':
-                _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, target_mask))
-                _metrics["valid_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
+                _metrics["valid_cfm"].add_dice(dice_metric(pred, target_mask))
+                _metrics["valid_cfm"].add_iou(intersection_over_union_metric(pred, target_mask))
             else:
                 _metrics["valid_cfm"].add_prediction(pred, target)
 
