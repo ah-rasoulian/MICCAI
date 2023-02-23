@@ -7,7 +7,7 @@ from sklearn import metrics
 from skimage.filters import threshold_otsu
 from monai.metrics.utils import get_mask_edges, get_surface_distance
 from torchvision.transforms import transforms
-from monai.transforms import Compose, RandAffine, RandFlip, RandGaussianNoise
+from monai.transforms import Compose, RandAffineD, RandFlipD, RandGaussianNoiseD
 from numpy import deg2rad
 import random
 import nibabel as nib
@@ -140,7 +140,7 @@ class FocalLoss(nn.Module):
 
 
 class DiceLoss(nn.Module):
-    def __init__(self, smooth=1):
+    def __init__(self, smooth=1e-5):
         super(DiceLoss, self).__init__()
         self.smooth = smooth
 
@@ -157,8 +157,26 @@ class DiceLoss(nn.Module):
         return 1 - dice
 
 
+class DiceSquareLoss(nn.Module):
+    def __init__(self, smooth=1e-5):
+        super(DiceSquareLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, inputs, targets):
+        inputs = torch.sigmoid(inputs)
+
+        # flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        intersection = (inputs * targets).sum()
+        dice = (2. * intersection + self.smooth) / ((inputs * inputs).sum() + targets.sum() + self.smooth)
+
+        return 1 - dice
+
+
 class DiceBCELoss(nn.Module):
-    def __init__(self, smooth=1):
+    def __init__(self, smooth=1e-5):
         super(DiceBCELoss, self).__init__()
         self.dice = DiceLoss(smooth)
 
@@ -169,7 +187,7 @@ class DiceBCELoss(nn.Module):
 
 
 class DiceFocalLoss(nn.Module):
-    def __init__(self, smooth=1):
+    def __init__(self, smooth=1e-5):
         super(DiceFocalLoss, self).__init__()
         self.dice = DiceLoss(smooth)
         self.focal = FocalLoss()
@@ -217,27 +235,16 @@ def load_model(model: nn.Module, path: str):
 
 class Augmentation:
     def __init__(self):
-        self.displacement = Compose([RandAffine(prob=0.5, rotate_range=(deg2rad(10), deg2rad(10), deg2rad(10)), scale_range=(0.1, 0.1, 0.1)),
-                                     RandFlip(prob=0.5, spatial_axis=0)])
-
-        self.color_change = Compose([RandGaussianNoise(prob=0.5, std=30)])
-
         self.augmentation = Compose([
-            self.displacement,
-            self.color_change
+            RandAffineD(prob=0.5, rotate_range=(deg2rad(10), deg2rad(10), deg2rad(10)), scale_range=(0.1, 0.1, 0.1), keys=['image', 'mask']),
+            RandFlipD(prob=0.5, keys=['image', 'mask']),
+            [RandGaussianNoiseD(prob=1, keys=['image'])]
         ])
 
-    def __call__(self, image, mask=None):
-        seed = self.augmentation.R.randint(0, 123456789)  # make a seed with numpy generator
-        self.augmentation.set_random_state(seed=seed)
-        image = self.augmentation(image)
-
-        if mask is not None:
-            self.displacement.set_random_state(seed=seed)
-            mask = self.displacement(mask)
-            return image, mask
-        else:
-            return image
+    def __call__(self, image, mask):
+        x = {'image': image, 'mask': mask}
+        x = self.augmentation(x)
+        return x['image'], x['mask']
 
 
 def save_nifti_image(file_path, image, affine):
@@ -253,8 +260,12 @@ def dice_metric(predicted_mask, gt_mask):
     gt_mask = gt_mask.flatten(1)
 
     intersection = torch.sum(predicted_mask * gt_mask, dim=1)
-    summation = torch.sum(predicted_mask, dim=1) + torch.sum(gt_mask, dim=1)
-    return torch.divide(2. * intersection, summation)
+    gt_sum = torch.sum(gt_mask, dim=1)
+    pred_sum = torch.sum(predicted_mask, dim=1)
+    summation = pred_sum + gt_sum
+    dice = torch.divide(2 * intersection, summation)
+    dice[gt_sum == 0] = torch.nan
+    return dice
 
 
 def intersection_over_union_metric(predicted_mask, gt_mask):
@@ -265,5 +276,9 @@ def intersection_over_union_metric(predicted_mask, gt_mask):
     gt_mask = gt_mask.flatten(1)
 
     intersection = torch.sum(predicted_mask * gt_mask, dim=1)
-    union = torch.sum(predicted_mask, dim=1) + torch.sum(gt_mask, dim=1) - intersection
-    return torch.divide(intersection, union)
+    gt_sum = torch.sum(gt_mask, dim=1)
+    pred_sum = torch.sum(predicted_mask, dim=1)
+    union = pred_sum + gt_sum - intersection
+    iou = torch.divide(intersection, union)
+    iou[gt_sum == 0] = torch.nan
+    return iou
