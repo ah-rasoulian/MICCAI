@@ -11,6 +11,10 @@ from monai.transforms import Compose, RandAffineD, RandFlipD, RandGaussianNoiseD
 from numpy import deg2rad
 import random
 import nibabel as nib
+from scipy.ndimage.morphology import distance_transform_edt as edt
+from scipy.ndimage import convolve
+import cv2 as cv
+from scipy.ndimage import distance_transform_edt
 
 
 class ConfusionMatrix:
@@ -113,89 +117,89 @@ class ConfusionMatrix:
         return np.array(scores)
 
 
-class FocalLoss(nn.Module):
-    def __init__(self, gamma=2, alpha=-1, reduction='mean'):
-        super().__init__()
-        self.gamma = gamma
-        self.alpha = alpha
-        self.reduction = reduction
-
-    def forward(self, pred, gt):
-        sigmoid = torch.sigmoid(pred)
-
-        bce = F.binary_cross_entropy_with_logits(pred, gt, reduction='none')
-        p_t = sigmoid * gt + (1 - sigmoid) * (1 - gt)
-        focal_loss = bce * (1 - p_t) ** self.gamma
-
-        if self.alpha > 0:
-            alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
-            focal_loss = alpha_t * focal_loss
-
-        if self.reduction == 'sum':
-            reduced_loss = focal_loss.sum()
-        else:
-            reduced_loss = focal_loss.mean()
-
-        return reduced_loss
-
-
-class DiceLoss(nn.Module):
-    def __init__(self, smooth=1e-5):
-        super(DiceLoss, self).__init__()
-        self.smooth = smooth
-
-    def forward(self, inputs, targets):
-        inputs = torch.sigmoid(inputs)
-
-        # flatten label and prediction tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        intersection = (inputs * targets).sum()
-        dice = (2. * intersection + self.smooth) / (inputs.sum() + targets.sum() + self.smooth)
-
-        return 1 - dice
-
-
-class DiceSquareLoss(nn.Module):
-    def __init__(self, smooth=1e-5):
-        super(DiceSquareLoss, self).__init__()
-        self.smooth = smooth
-
-    def forward(self, inputs, targets):
-        inputs = torch.sigmoid(inputs)
-
-        # flatten label and prediction tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        intersection = (inputs * targets).sum()
-        dice = (2. * intersection + self.smooth) / ((inputs * inputs).sum() + targets.sum() + self.smooth)
-
-        return 1 - dice
-
-
-class DiceBCELoss(nn.Module):
-    def __init__(self, smooth=1e-5):
-        super(DiceBCELoss, self).__init__()
-        self.dice = DiceLoss(smooth)
-
-    def forward(self, inputs, targets):
-        dice_loss = self.dice(inputs, targets)
-        bce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
-        return bce_loss + dice_loss
-
-
-class DiceFocalLoss(nn.Module):
-    def __init__(self, smooth=1e-5):
-        super(DiceFocalLoss, self).__init__()
-        self.dice = DiceLoss(smooth)
-        self.focal = FocalLoss()
-
-    def forward(self, inputs, targets):
-        dice_loss = self.dice(inputs, targets)
-        focal_bce = self.focal(inputs, targets)
-        return dice_loss + focal_bce
+# class FocalLoss(nn.Module):
+#     def __init__(self, gamma=2, alpha=-1, reduction='mean'):
+#         super().__init__()
+#         self.gamma = gamma
+#         self.alpha = alpha
+#         self.reduction = reduction
+#
+#     def forward(self, pred, gt):
+#         sigmoid = torch.sigmoid(pred)
+#
+#         bce = F.binary_cross_entropy_with_logits(pred, gt, reduction='none')
+#         p_t = sigmoid * gt + (1 - sigmoid) * (1 - gt)
+#         focal_loss = bce * (1 - p_t) ** self.gamma
+#
+#         if self.alpha > 0:
+#             alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
+#             focal_loss = alpha_t * focal_loss
+#
+#         if self.reduction == 'sum':
+#             reduced_loss = focal_loss.sum()
+#         else:
+#             reduced_loss = focal_loss.mean()
+#
+#         return reduced_loss
+#
+#
+# class DiceLoss(nn.Module):
+#     def __init__(self, smooth=1e-10):
+#         super(DiceLoss, self).__init__()
+#         self.smooth = smooth
+#
+#     def forward(self, inputs, targets):
+#         inputs = torch.sigmoid(inputs)
+#
+#         # flatten label and prediction tensors
+#         inputs = inputs.reshape(-1)
+#         targets = targets.reshape(-1)
+#
+#         intersection = torch.sum(inputs * targets)
+#         dice = (2. * intersection + self.smooth) / (torch.sum(inputs) + torch.sum(targets) + self.smooth)
+#
+#         return 1 - dice
+#
+#
+# class DiceSquareLoss(nn.Module):
+#     def __init__(self, smooth=1e-5):
+#         super(DiceSquareLoss, self).__init__()
+#         self.smooth = smooth
+#
+#     def forward(self, inputs, targets):
+#         inputs = torch.sigmoid(inputs)
+#
+#         # flatten label and prediction tensors
+#         inputs = inputs.view(-1)
+#         targets = targets.view(-1)
+#
+#         intersection = (inputs * targets).sum()
+#         dice = (2. * intersection + self.smooth) / ((inputs * inputs).sum() + targets.sum() + self.smooth)
+#
+#         return 1 - dice
+#
+#
+# class DiceBCELoss(nn.Module):
+#     def __init__(self, smooth=1e-5):
+#         super(DiceBCELoss, self).__init__()
+#         self.dice = DiceLoss(smooth)
+#
+#     def forward(self, inputs, targets):
+#         dice_loss = self.dice(inputs, targets)
+#         bce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
+#         return bce_loss + dice_loss
+#
+#
+# class DiceFocalLoss(nn.Module):
+#     def __init__(self, smooth=1e-5):
+#         super(DiceFocalLoss, self).__init__()
+#         self.dice = DiceLoss(smooth)
+#         self.focal = FocalLoss()
+#
+#     def forward(self, inputs, targets):
+#         dice_loss = self.dice(inputs, targets)
+#         focal_bce = self.focal(inputs, targets)
+#         return dice_loss + focal_bce
 
 
 class EarlyStopping:
@@ -253,8 +257,11 @@ def save_nifti_image(file_path, image, affine):
 
 
 def dice_metric(predicted_mask, gt_mask):
-    predicted_mask = torch.round(torch.sigmoid(predicted_mask)).detach()
-    gt_mask = gt_mask.detach()
+    # predicted_mask = torch.round(torch.sigmoid(predicted_mask)).detach()
+    predicted_mask = torch.argmax(predicted_mask, dim=1).detach()
+
+    # gt_mask = gt_mask.detach()
+    gt_mask = gt_mask[:, 1].detach()
 
     predicted_mask = predicted_mask.flatten(1)
     gt_mask = gt_mask.flatten(1)
@@ -269,8 +276,11 @@ def dice_metric(predicted_mask, gt_mask):
 
 
 def intersection_over_union_metric(predicted_mask, gt_mask):
-    predicted_mask = torch.round(torch.sigmoid(predicted_mask)).detach()
-    gt_mask = gt_mask.detach()
+    # predicted_mask = torch.round(torch.sigmoid(predicted_mask)).detach()
+    predicted_mask = torch.argmax(predicted_mask, dim=1).detach()
+
+    # gt_mask = gt_mask.detach()
+    gt_mask = gt_mask[:, 1].detach()
 
     predicted_mask = predicted_mask.flatten(1)
     gt_mask = gt_mask.flatten(1)
@@ -282,3 +292,24 @@ def intersection_over_union_metric(predicted_mask, gt_mask):
     iou = torch.divide(intersection, union)
     iou[gt_sum == 0] = torch.nan
     return iou
+
+
+def binary_to_onehot(tensor: torch.Tensor):
+    # maps a binary tensor to an onehot tensor
+    onehot = torch.zeros(2, *tensor.shape, device=tensor.device)
+    onehot[1, ...] = tensor
+    onehot[0, ...] = 1 - tensor
+    return onehot
+
+
+def onehot_to_dist(onehot: torch.Tensor, dtype=torch.int32):
+    # inspired by https://github.com/LIVIAETS/boundary-loss/
+    # all rights reserved to HKervadec
+    number_of_classes = onehot.shape[0]
+    result = torch.zeros_like(onehot, dtype=dtype)
+    for k in range(number_of_classes):
+        pos_mask = onehot[k]
+        if pos_mask.any():
+            neg_mask = 1 - pos_mask
+            result[k] = torch.from_numpy(distance_transform_edt(neg_mask)) * neg_mask - (torch.from_numpy(distance_transform_edt(pos_mask)) - 1) * pos_mask
+    return result.type(torch.FloatTensor)
