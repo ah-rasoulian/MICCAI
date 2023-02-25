@@ -5,7 +5,7 @@ from models.unet import ConvBlock
 from timm.models.layers import to_3tuple
 
 
-class FocalConvUnet(nn.Module):
+class FocalConvUNet(nn.Module):
     def __init__(self,
                  multitask=False,
                  img_size=64,

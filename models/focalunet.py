@@ -5,8 +5,9 @@ from models.unet import ConvBlock
 from timm.models.layers import to_3tuple
 
 
-class MultitaskFocalUnet(nn.Module):
+class FocalUNet(nn.Module):
     def __init__(self,
+                 multitask=False,
                  img_size=64,
                  patch_size=2,
                  in_chans=1,
@@ -31,6 +32,7 @@ class MultitaskFocalUnet(nn.Module):
                  ):
         super().__init__()
 
+        self.multitask = multitask
         self.num_layers = len(depths)
         embed_dim = [embed_dim * (2 ** i) for i in range(self.num_layers + 1)]
 
@@ -95,7 +97,7 @@ class MultitaskFocalUnet(nn.Module):
         for i in range(self.num_layers):
             ind = self.num_layers - 1 - i
             self.decoder_layers[f'up-{i}'] = PatchExtend(img_size=to_3tuple(self.patches_resolution[0] // (2 ** (ind + 1))),
-                                                         patch_size=patch_size,
+                                                         patch_size=2,
                                                          in_chans=embed_dim[ind + 1],
                                                          embed_dim=embed_dim[ind],
                                                          use_conv_embed=use_conv_embed,
@@ -128,11 +130,13 @@ class MultitaskFocalUnet(nn.Module):
         self.input_embedder = ConvBlock(in_ch=in_chans, out_ch=embed_dim[0], kernel_size=3)
         self.bottleneck_conv = ConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
 
-        self.segmentation_head = nn.Conv3d(in_channels=2 * embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same')
-        self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
-                                                 nn.Flatten(1),
-                                                 nn.Linear(embed_dim[-1], num_classes)
-                                                 )
+        self.segmentation_head = nn.Conv3d(in_channels=embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same')
+
+        if multitask:
+            self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
+                                                     nn.Flatten(1),
+                                                     nn.Linear(embed_dim[-1], num_classes)
+                                                     )
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -167,4 +171,7 @@ class MultitaskFocalUnet(nn.Module):
         x, D, H, W = self.patch_extend(x)
         x = x.transpose(1, 2).reshape(x.shape[0], -1, D, H, W)
 
-        return self.classification_head(shortcut_bottleneck), self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
+        if self.multitask:
+            return self.classification_head(shortcut_bottleneck), self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
+        else:
+            self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
