@@ -3,9 +3,10 @@ from collections import OrderedDict
 import torch
 
 
-class UNet3D(nn.Module):
-    def __init__(self, in_ch, num_classes, embed_dims):
+class UNet(nn.Module):
+    def __init__(self, in_ch, num_classes, embed_dims, multitask=False):
         super().__init__()
+        self.multitask = multitask
         self.num_classes = num_classes
         self.embed_dims = embed_dims
 
@@ -21,10 +22,15 @@ class UNet3D(nn.Module):
         decoder = OrderedDict()
         for i in range(len(self.embed_dims) - 1):
             decoder[f'up-{i + 1}'] = nn.ConvTranspose3d(in_channels=self.embed_dims[i], out_channels=self.embed_dims[i + 1], kernel_size=3, stride=2, padding=1, output_padding=1)
-            decoder[f'expansive-{i + 1}'] = ConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3, droprate=0.2)
+            decoder[f'expansive-{i + 1}'] = ConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3)
         self.decoder = nn.ModuleDict(decoder)
 
-        self.output = nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same')
+        if multitask:
+            self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
+                                                     nn.Flatten(1),
+                                                     nn.Linear(self.num_features, num_classes))
+
+        self.segmentation_head = nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same')
 
     def forward(self, x):
         residuals = []
@@ -34,14 +40,16 @@ class UNet3D(nn.Module):
             x = self.encoder[f'pool-{i + 1}'](x)
 
         x = self.bottleneck(x)
-
+        shortcut_bottleneck = x
         residuals.reverse()
         for i in range(len(self.embed_dims) - 1):
             x = self.decoder[f'up-{i + 1}'](x)
             x = self.decoder[f'expansive-{i + 1}'](torch.cat((x, residuals[i]), dim=1))
 
-        x = self.output(x)
-        return x
+        if self.multitask:
+            return self.classification_head(x), self.segmentation_head(x)
+        else:
+            return self.segmentation_head(x)
 
 
 class ConvBlock(nn.Module):
@@ -57,29 +65,3 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         return self.block(x)
-
-
-class MultiTaskUNet3D(nn.Module):
-    def __init__(self, in_ch, num_classes, embed_dims, classification_droprate=0.2):
-        super().__init__()
-        self.num_features = embed_dims[-1]
-
-        self.unet = UNet3D(in_ch, num_classes, embed_dims)
-
-        self.intermediates = {}
-        self.unet.bottleneck.register_forward_hook(get_intermediate_layer_output(self.intermediates, "bottleneck"))
-
-        self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
-                                                 nn.Flatten(1),
-                                                 nn.Dropout(classification_droprate),
-                                                 nn.Linear(self.num_features, num_classes))
-
-    def forward(self, x):
-        pred_mask = self.unet(x)
-        return self.classification_head(self.intermediates["bottleneck"]), pred_mask
-
-
-def get_intermediate_layer_output(saved_dict, layer_name):
-    def hook(model, inp, out):
-        saved_dict[layer_name] = out
-    return hook
