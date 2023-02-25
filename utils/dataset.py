@@ -140,7 +140,7 @@ class AneurysmDataset(Dataset):
             mask[image < th] = 0
 
         mask = mask.squeeze()  # to remove the channel of mask
-        one_hot_mask = binary_to_onehot(mask)
-        dist_map = onehot_to_dist(onehot_to_dist())
+        onehot_mask = binary_to_onehot(mask)
+        dist_map = onehot_to_dist(onehot_mask)
 
-        return image, one_hot_mask, dist_map, label
+        return image, onehot_mask, dist_map, label
