@@ -1,10 +1,9 @@
 import torch.nn as nn
 from models.focalnet import FocalNet
-from collections import OrderedDict
 import torch
 
 
-class WeakFocalNet3D(nn.Module):
+class FocalResConvNet(nn.Module):
     def __init__(self, img_size, patch_size, in_ch, num_classes, embed_dims, depths, levels, windows, use_conv_embed=True):
         super().__init__()
         self.num_layers = len(depths)
@@ -44,11 +43,3 @@ class WeakFocalNet3D(nn.Module):
         x = self.modulators_conv_blocks['bottleneck'](x)
 
         return self.head(focal_features * x)
-
-    def segmentation(self, x):
-        y = self.forward(x)
-
-        mask = torch.abs(self.focal_encoder.layers[-1].blocks[-1].modulation.modulator).mean(1, keepdim=True)
-        mask = self.up_sample(mask)
-
-        return y, mask.squeeze()
