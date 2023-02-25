@@ -10,6 +10,7 @@ import nibabel as nib
 import torch
 from monai.transforms import NormalizeIntensity
 import torch.nn as nn
+from utils.utils import binary_to_onehot, onehot_to_dist
 
 
 def find_sub_ses_pairs(data_path: str):
@@ -64,7 +65,7 @@ class AneurysmDataset(Dataset):
         self.labels = []
         self.masks_files = []
         self.transform = transform
-        self.threshold_mask = nn.Threshold(0.5, 0) if shrink_masks else None
+        self.shrink_mask = shrink_masks
         self.normalize = NormalizeIntensity()
 
         self.image_affine = None
@@ -129,14 +130,17 @@ class AneurysmDataset(Dataset):
         label = torch.FloatTensor([self.labels[item]])
 
         image = image.unsqueeze(0)  # to add a channel -> ch, h, w, d
-        mask = mask.unsqueeze(0)  # to add a channel -> ch, h, w, d
+        mask = mask.unsqueeze(0)  # to add a channel -> ch, h, w, d to apply transforms
         if self.transform is not None:
             image, mask = self.transform(image, mask)
 
         image = self.normalize(image)
+        if self.shrink_mask and label == 1:
+            th = (image.max() - image.min()) / 2
+            mask[image < th] = 0
 
-        image = (image - image.min()) / (image.max() - image.min())
-        if self.threshold_mask and label == 1:
-            mask = mask * self.threshold_mask(image)
+        mask = mask.squeeze()  # to remove the channel of mask
+        one_hot_mask = binary_to_onehot(mask)
+        dist_map = onehot_to_dist(onehot_to_dist())
 
-        return image, mask, label
+        return image, one_hot_mask, dist_map, label
