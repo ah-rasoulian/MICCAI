@@ -38,9 +38,8 @@ def validation(model, data_loader, cfm: ConfusionMatrix, loss_fn=None, device='c
             cfm.add_iou(intersection_over_union_metric(pred_mask, target_mask))
 
 
-def test_segmentation(model, checkpoint_path, test_loader, device='cuda'):
+def test_segmentation(model, test_loader, device='cuda'):
     global image_affine, mask_affine
-    load_model(model, checkpoint_path)
 
     model.to(device)
     pbar = tqdm(test_loader, total=len(test_loader))
@@ -48,23 +47,23 @@ def test_segmentation(model, checkpoint_path, test_loader, device='cuda'):
     i = 1
     _type = 'unet'
     with torch.no_grad():
-        for sample, mask, label in pbar:
-            sample, mask, label = sample.to(device), mask.to(device), label.to(device)
+        for sample, target_mask, dist_mask, target in pbar:
+            sample, target_mask, target = sample.to(device), target_mask.to(device), target.to(device)
+            if target == 1:
+                prediction = model(sample)
+                if model.multitask:
+                    pred, pred_mask = prediction
+                else:
+                    pred_mask = prediction
 
-            # pred, pred_mask = model(sample)
-
-            # print()
-            # pred_class = torch.round(torch.sigmoid(pred))
-            # print(pred_class, label)
-            # print()
-            if label == 1:
-                pred, pred_mask = model(sample)
-                print(i, dice_metric(pred_mask, mask), intersection_over_union_metric(pred_mask, mask))
+                print(i, dice_metric(pred_mask, target_mask), intersection_over_union_metric(pred_mask, target_mask))
+                pred_mask = torch.argmax(pred_mask, dim=1).type(torch.int8)
+                target_mask = torch.argmax(target_mask, dim=1).type(torch.int8)
                 save_nifti_image(os.path.join(f'samples/{_type}/image/image_{i:03d}.nii'), sample, image_affine)
-                save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), mask, mask_affine)
-                save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), torch.sigmoid(pred_mask), mask_affine)
+                save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), target_mask, mask_affine)
+                save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), pred_mask, mask_affine)
                 i += 1
-                if i > 10:
+                if i > 25:
                     return
 
 
@@ -106,21 +105,23 @@ def main():
     # model = MultiTaskUNet3D(in_ch, num_classes, unet_embed_dims)
     # model = MultitaskFocalUnet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
     #                             embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
-    model = UNet(in_ch, num_classes, unet_embed_dims)
-    # model = MultitaskFocalUnet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
-    #                            embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
+    # model = UNet(in_ch, num_classes, unet_embed_dims)
+    model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
+                               embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
 
     checkpoint_path = os.path.join(extra_path, f"weights/{checkpoint_name}")
+    load_model(model, checkpoint_path)
     test_ds = AneurysmDataset(data_path, test_sub_ses, shuffle=False)
     image_affine = test_ds.image_affine
     mask_affine = test_ds.mask_affine
 
     if setup == "classification":
         test_loader = DataLoader(test_ds, batch_size=16)
-        test(model, checkpoint_path, test_loader)
+        test_cfm = ConfusionMatrix()
+        validation(model, test_loader, test_cfm)
     else:
         test_loader = DataLoader(test_ds, batch_size=1)
-        test_segmentation(model, checkpoint_path, test_loader)
+        test_segmentation(model, test_loader)
 
 
 image_affine = None
