@@ -134,7 +134,7 @@ class FocalUNet(nn.Module):
                                                nn.Softmax(dim=1))
 
         if multitask:
-            num_features = (img_size // patch_size) // (2 * self.num_layers) * embed_dim[-1]
+            num_features = ((img_size // patch_size) // (2 ** self.num_layers)) ** 3 * embed_dim[-1]
             self.classification_head = nn.Sequential(nn.Flatten(1),
                                                      nn.Linear(num_features, num_classes),
                                                      nn.Softmax(dim=1)
@@ -176,4 +176,4 @@ class FocalUNet(nn.Module):
         if self.multitask:
             return self.classification_head(shortcut_bottleneck), self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
         else:
-            self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
+            return self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))

@@ -25,7 +25,7 @@ def validation(model, data_loader, cfm: ConfusionMatrix, loss_fn=None, device='c
             prediction = model(sample)
             if loss_fn:
                 loss = loss_fn(prediction, (target, target_mask), dist_mask)
-                cfm.add_dice(loss)
+                cfm.add_loss(loss)
                 cfm.add_number_of_samples(len(target))
 
             if model.multitask:

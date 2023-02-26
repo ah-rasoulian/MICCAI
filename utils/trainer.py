@@ -10,7 +10,7 @@ from inference.inference import validation
 def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loss_fn, train_loader, valid_loader, device='cuda', multitask=False):
     model.to(device)
     model.train()
-    scheduler = StepLR(optimizer, 50, 0.95)
+    scheduler = StepLR(optimizer, 100, 0.98)
     pbar_train = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
     pbar_train.set_description('training')
     _metrics = {"train_cfm": ConfusionMatrix(), "valid_cfm": ConfusionMatrix()}
