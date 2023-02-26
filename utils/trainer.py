@@ -1,78 +1,40 @@
 import torch.optim
 from utils.utils import *
 from tqdm import tqdm
+from torch.optim.lr_scheduler import StepLR
+import torch.nn.functional as F
+from utils.losses import *
+from inference.inference import validation
 
 
-def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loss_fn, train_loader, valid_loader, device='cuda', train_type='classification'):
-    assert train_type in ['classification', 'segmentation', 'multitask'], "train type not suppoerted"
-    if train_type == 'multitask':
-        assert type(loss_fn) is tuple and len(loss_fn) == 3
-        alpha, classification_loss, segmentation_loss = loss_fn
-        assert 0 <= alpha <= 1
+def train_one_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loss_fn, train_loader, valid_loader, device='cuda', multitask=False):
     model.to(device)
     model.train()
+    scheduler = StepLR(optimizer, 50, 0.95)
     pbar_train = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
     pbar_train.set_description('training')
     _metrics = {"train_cfm": ConfusionMatrix(), "valid_cfm": ConfusionMatrix()}
-    for i, (sample, target_mask, target) in pbar_train:
+    for i, (sample, target_mask, dist_mask, target) in pbar_train:
         optimizer.zero_grad()
-        sample, target_mask, target = sample.to(device), target_mask.to(device), target.to(device)
-
-        pred = model(sample)
-        if train_type == 'multitask':
-            pred, pred_mask = pred
-            loss = alpha * classification_loss(pred, target) + (1 - alpha) * segmentation_loss(pred_mask, target_mask)
-        elif train_type == 'segmentation':
-            loss = loss_fn(pred, target_mask)
-        else:
-            loss = loss_fn(pred, target)
-        loss.backward()
-        optimizer.step()
-
+        sample, target_mask, dist_mask, target = sample.to(device), target_mask.to(device), dist_mask.to(device), target.to(device)
+        prediction = model(sample)
+        loss = loss_fn(prediction, (target, target_mask), dist_mask)
         _metrics["train_cfm"].add_loss(loss)
         _metrics["train_cfm"].add_number_of_samples(len(target))
-        if train_type == 'multitask':
+
+        if model.multitask:
+            pred, pred_mask = prediction
             _metrics["train_cfm"].add_prediction(pred, target)
-            _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
-            _metrics["train_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
-        elif train_type == 'segmentation':
-            _metrics["train_cfm"].add_dice(dice_metric(pred, target_mask))
-            _metrics["train_cfm"].add_iou(intersection_over_union_metric(pred, target_mask))
         else:
-            _metrics["train_cfm"].add_prediction(pred, target)
+            pred_mask = prediction
 
-    if train_type in ['multitask', 'classification']:
-        _metrics["train_cfm"].compute_confusion_matrix()
+        _metrics["train_cfm"].add_dice(dice_metric(pred_mask, target_mask))
+        _metrics["train_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
 
-    model.eval()
-    pbar_valid = tqdm(enumerate(valid_loader), total=len(valid_loader), leave=False)
-    pbar_valid.set_description('validating')
-    with torch.no_grad():
-        for i, (sample, target_mask, target) in pbar_valid:
-            sample, target_mask, target = sample.to(device), target_mask.to(device), target.to(device)
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
 
-            pred = model(sample)
-            if train_type == 'multitask':
-                pred, pred_mask = pred
-                loss = alpha * classification_loss(pred, target) + (1 - alpha) * segmentation_loss(pred_mask, target_mask)
-            elif train_type == 'segmentation':
-                loss = loss_fn(pred, target_mask)
-            else:
-                loss = loss_fn(pred, target)
-
-            _metrics["valid_cfm"].add_loss(loss)
-            _metrics["valid_cfm"].add_number_of_samples(len(target))
-            if train_type == 'multitask':
-                _metrics["valid_cfm"].add_prediction(pred, target)
-                _metrics["valid_cfm"].add_dice(dice_metric(pred_mask, target_mask))
-                _metrics["valid_cfm"].add_iou(intersection_over_union_metric(pred_mask, target_mask))
-            elif train_type == 'segmentation':
-                _metrics["valid_cfm"].add_dice(dice_metric(pred, target_mask))
-                _metrics["valid_cfm"].add_iou(intersection_over_union_metric(pred, target_mask))
-            else:
-                _metrics["valid_cfm"].add_prediction(pred, target)
-
-        if train_type in ['multitask', 'classification']:
-            _metrics["valid_cfm"].compute_confusion_matrix()
+    validation(model, valid_loader, _metrics["valid_cfm"], loss_fn, device=device)
 
     return _metrics
