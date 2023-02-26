@@ -25,12 +25,13 @@ class UNet(nn.Module):
             decoder[f'expansive-{i + 1}'] = ConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3)
         self.decoder = nn.ModuleDict(decoder)
 
+        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same'),
+                                               nn.Softmax(dim=1))
         if multitask:
             self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
                                                      nn.Flatten(1),
-                                                     nn.Linear(self.num_features, num_classes))
-
-        self.segmentation_head = nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same')
+                                                     nn.Linear(self.num_features, num_classes),
+                                                     nn.Softmax(dim=1))
 
     def forward(self, x):
         residuals = []

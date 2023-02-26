@@ -102,12 +102,14 @@ class FocalConvUNet(nn.Module):
             self.decoder_layers[f'up-{i}'] = nn.ConvTranspose3d(in_channels=embed_dim[ind], out_channels=embed_dim[ind - 1], kernel_size=3, stride=2, padding=1, output_padding=1)
             self.decoder_layers[f'expansive-{i}'] = ConvBlock(in_ch=2 * embed_dim[ind - 1], out_ch=embed_dim[ind - 1], kernel_size=3, droprate=0.2)
 
-        self.segmentation_head = nn.Conv3d(in_channels=2 * embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same')
+        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=2 * embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same'),
+                                               nn.Softmax(dim=1))
 
         if multitask:
             self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
                                                      nn.Flatten(1),
-                                                     nn.Linear(embed_dim[-1], num_classes)
+                                                     nn.Linear(embed_dim[-1], num_classes),
+                                                     nn.Softmax(1),
                                                      )
         self.apply(self._init_weights)
 
