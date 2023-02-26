@@ -48,7 +48,7 @@ class UNet(nn.Module):
             x = self.decoder[f'expansive-{i + 1}'](torch.cat((x, residuals[i]), dim=1))
 
         if self.multitask:
-            return self.classification_head(x), self.segmentation_head(x)
+            return self.classification_head(shortcut_bottleneck), self.segmentation_head(x)
         else:
             return self.segmentation_head(x)
 
