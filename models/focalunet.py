@@ -130,13 +130,13 @@ class FocalUNet(nn.Module):
         self.input_embedder = ConvBlock(in_ch=in_chans, out_ch=embed_dim[0], kernel_size=3)
         self.bottleneck_conv = ConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
 
-        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same'),
+        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=embed_dim[0] * 2, out_channels=num_classes, kernel_size=3, padding='same'),
                                                nn.Softmax(dim=1))
 
         if multitask:
-            self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
-                                                     nn.Flatten(1),
-                                                     nn.Linear(embed_dim[-1], num_classes),
+            num_features = (img_size // patch_size) // (2 * self.num_layers) * embed_dim[-1]
+            self.classification_head = nn.Sequential(nn.Flatten(1),
+                                                     nn.Linear(num_features, num_classes),
                                                      nn.Softmax(dim=1)
                                                      )
         self.apply(self._init_weights)

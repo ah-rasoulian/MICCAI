@@ -30,7 +30,7 @@ class UNet(nn.Module):
         if multitask:
             self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
                                                      nn.Flatten(1),
-                                                     nn.Linear(self.num_features, num_classes),
+                                                     nn.Linear(self.embed_dims[0], num_classes),
                                                      nn.Softmax(dim=1))
 
     def forward(self, x):
