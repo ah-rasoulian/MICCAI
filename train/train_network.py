@@ -30,12 +30,6 @@ def main():
         config_dict = json.load(f)
 
     # extract args from config file
-    model_name = config_dict["model"]
-    assert model_name in ["unet", "focalconvunet", "focalunet", "swinunetr"]
-    img_size = config_dict["img_size"]
-    in_ch = config_dict["in_ch"]
-    num_classes = config_dict["num_classes"]
-
     epochs = config_dict["epochs"]
     batch_size = config_dict["batch_size"]
     num_workers = config_dict["num_workers"]
@@ -44,14 +38,6 @@ def main():
     do_sampling = str_to_bool(config_dict["do_sampling"])
     use_validation = str_to_bool(config_dict["use_validation"])
     validation_ratio = config_dict["validation_ratio"]
-
-    unet_embed_dims = list(config_dict["unet_embed_dims"])
-
-    focal_patch_size = config_dict["focal_patch_size"]
-    focal_embed_dims = config_dict["focal_embed_dims"]
-    focal_depths = list(config_dict["focal_depths"])
-    focal_levels = list(config_dict["focal_levels"])
-    focal_windows = list(config_dict["focal_windows"])
 
     data_path = config_dict["data_path"]
     extra_path = config_dict["extra_path"]
@@ -79,18 +65,7 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=num_workers)
     valid_loader = DataLoader(valid_ds, batch_size=batch_size, num_workers=num_workers)
 
-    if model_name == "unet":
-        model = UNet(in_ch, num_classes, unet_embed_dims)
-    elif model_name == 'swinunetr':
-        model = nn.Sequential(SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24),
-                              nn.Softmax(1))
-    elif model_name == "focalconvunet":
-        model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
-                              embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
-    else:
-        model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
-                          embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
-
+    model = build_model(config_dict)
     loss_fn = DiceBoundaryLoss()
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-6)

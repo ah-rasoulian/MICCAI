@@ -15,6 +15,6 @@
 
   "data_path": "C:\\lausanne-aneurysym-patches\\Data_Set_Feb_05_2023_v1-all",
   "extra_path": "extra\\",
-  "model_name": "weakfocal",
-  "checkpoint_name": "FocalUNet_seg_4l_2l_32.pth"
+  "model_name": "swinunetr",
+  "checkpoint_name": "m.pt"
 }

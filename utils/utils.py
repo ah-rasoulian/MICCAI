@@ -17,6 +17,11 @@ import cv2 as cv
 from scipy.ndimage import distance_transform_edt
 from utils.losses import *
 import matplotlib.pyplot as plt
+from models.unet import UNet
+from models.focalunet import FocalUNet
+from models.focalconvunet import FocalConvUNet
+from monai.networks.nets import SwinUNETR
+from timm.models.layers import to_3tuple
 
 
 class ConfusionMatrix:
@@ -345,3 +350,31 @@ def str_to_bool(string):
 def print_test_result(test_cfm: ConfusionMatrix):
     print(f"\ntest result:"
           f"dice={test_cfm.get_mean_dice()}, iou={test_cfm.get_mean_iou()}\n")
+
+
+def build_model(config_dict):
+    model_name = config_dict["model"]
+    assert model_name in ["unet", "focalconvunet", "focalunet", "swinunetr"]
+    img_size = config_dict["img_size"]
+    in_ch = config_dict["in_ch"]
+    num_classes = config_dict["num_classes"]
+    unet_embed_dims = list(config_dict["unet_embed_dims"])
+
+    focal_patch_size = config_dict["focal_patch_size"]
+    focal_embed_dims = config_dict["focal_embed_dims"]
+    focal_depths = list(config_dict["focal_depths"])
+    focal_levels = list(config_dict["focal_levels"])
+    focal_windows = list(config_dict["focal_windows"])
+    if model_name == "unet":
+        model = UNet(in_ch, num_classes, unet_embed_dims)
+    elif model_name == 'swinunetr':
+        model = nn.Sequential(SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24),
+                              nn.Softmax(1))
+    elif model_name == "focalconvunet":
+        model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
+                              embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
+    else:
+        model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
+                          embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
+
+    return model
