@@ -104,6 +104,7 @@ class FocalUNet(nn.Module):
                                                          norm_layer=norm_layer if self.path_norm else None,
                                                          is_stem=False
                                                          )
+            self.decoder_layers[f'dropout-{i}'] = nn.Dropout3d(p=0.25)
             self.decoder_layers[f'expansive-{i}'] = BasicLayer(dim=2 * embed_dim[ind],
                                                                out_dim=embed_dim[ind],
                                                                input_resolution=(self.patches_resolution[0] // (2 ** ind),
@@ -167,7 +168,11 @@ class FocalUNet(nn.Module):
         x = self.bottleneck_conv(x)
         for i in range(self.num_layers):
             x, D, H, W = self.decoder_layers[f'up-{i}'](x)
-            x, D, H, W = self.decoder_layers[f'expansive-{i}'](torch.cat((x, residuals[i]), dim=2), D, H, W)
+            concat = torch.cat((x, residuals[i]), dim=2)
+            concat = concat.transpose(1, 2).reshape(x.shape[0], -1, D, H, W)
+            concat = self.decoder_layers[f'dropout-{i}'](concat)
+            concat = concat.flatten(2).transpose(1, 2)
+            x, D, H, W = self.decoder_layers[f'expansive-{i}'](concat, D, H, W)
             x = self.decoder_layers[f'embed-reducer-{i}'](x.transpose(1, 2).reshape(x.shape[0], -1, D, H, W))
 
         x, D, H, W = self.patch_extend(x)

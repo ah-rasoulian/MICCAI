@@ -100,7 +100,8 @@ class FocalConvUNet(nn.Module):
         for i in range(len(self.embed_dim) - 1):
             ind = len(self.embed_dim) - 1 - i
             self.decoder_layers[f'up-{i}'] = nn.ConvTranspose3d(in_channels=embed_dim[ind], out_channels=embed_dim[ind - 1], kernel_size=3, stride=2, padding=1, output_padding=1)
-            self.decoder_layers[f'expansive-{i}'] = ConvBlock(in_ch=2 * embed_dim[ind - 1], out_ch=embed_dim[ind - 1], kernel_size=3, droprate=0.2)
+            self.decoder_layers[f'dropout-{i}'] = nn.Dropout3d(p=0.25)
+            self.decoder_layers[f'expansive-{i}'] = ConvBlock(in_ch=2 * embed_dim[ind - 1], out_ch=embed_dim[ind - 1], kernel_size=3)
 
         self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=2 * embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same'),
                                                nn.Softmax(dim=1))
@@ -140,7 +141,9 @@ class FocalConvUNet(nn.Module):
         x = self.bottleneck_conv(x)
         for i in range(len(self.embed_dim) - 1):
             x = self.decoder_layers[f'up-{i}'](x)
-            x = self.decoder_layers[f'expansive-{i}'](torch.cat((x, residuals[i]), dim=1))
+            concat = torch.cat((x, residuals[i]), dim=1)
+            concat = self.decoder_layers[f'dropout-{i}'](concat)
+            x = self.decoder_layers[f'expansive-{i}'](concat)
 
         x, D, H, W = self.patch_extend(x)
         b, L, c = x.shape

@@ -22,6 +22,7 @@ class UNet(nn.Module):
         decoder = OrderedDict()
         for i in range(len(self.embed_dims) - 1):
             decoder[f'up-{i + 1}'] = nn.ConvTranspose3d(in_channels=self.embed_dims[i], out_channels=self.embed_dims[i + 1], kernel_size=3, stride=2, padding=1, output_padding=1)
+            self.decoder_layers[f'dropout-{i}'] = nn.Dropout3d(p=0.25)
             decoder[f'expansive-{i + 1}'] = ConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3)
         self.decoder = nn.ModuleDict(decoder)
 
@@ -45,7 +46,9 @@ class UNet(nn.Module):
         residuals.reverse()
         for i in range(len(self.embed_dims) - 1):
             x = self.decoder[f'up-{i + 1}'](x)
-            x = self.decoder[f'expansive-{i + 1}'](torch.cat((x, residuals[i]), dim=1))
+            concat = torch.cat((x, residuals[i]), dim=1)
+            concat = self.decoder_layers[f'dropout-{i}'](concat)
+            x = self.decoder[f'expansive-{i + 1}'](concat)
 
         if self.multitask:
             return self.classification_head(shortcut_bottleneck), self.segmentation_head(x)
