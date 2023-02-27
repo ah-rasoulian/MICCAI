@@ -60,12 +60,11 @@ def train_valid_test_split(data_path, out_dir, validation_size, override=False):
 
 
 class AneurysmDataset(Dataset):
-    def __init__(self, root_dir, sub_ses_to_use, transform=None, shrink_masks=False, shuffle=True, return_dist_map=True):
+    def __init__(self, root_dir, sub_ses_to_use, transform=None, shuffle=True, return_dist_map=True):
         self.images_files = []
         self.labels = []
         self.masks_files = []
         self.transform = transform
-        self.shrink_mask = shrink_masks
         self.return_dist_map = return_dist_map
         self.normalize = NormalizeIntensity()
 
@@ -136,9 +135,6 @@ class AneurysmDataset(Dataset):
             image, mask = self.transform(image, mask)
 
         image = self.normalize(image)
-        if self.shrink_mask and label == 1:
-            th = (image.max() - image.min()) / 2
-            mask[image < th] = 0
 
         mask = mask.squeeze()  # to remove the channel of mask
         onehot_mask = binary_to_onehot(mask)

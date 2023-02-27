@@ -65,8 +65,8 @@ def main():
     else:
         train_sub_ses, _, valid_sub_ses = train_valid_test_split(data_path, os.path.join(extra_path, 'data_split'), 0, override=True)
 
-    train_ds = AneurysmDataset(data_path, train_sub_ses, transform=augmentation, shrink_masks=True)
-    valid_ds = AneurysmDataset(data_path, valid_sub_ses, shrink_masks=True)
+    train_ds = AneurysmDataset(data_path, train_sub_ses, transform=augmentation)
+    valid_ds = AneurysmDataset(data_path, valid_sub_ses)
 
     train_sampler = None
     labels_counts = Counter(train_ds.labels)
