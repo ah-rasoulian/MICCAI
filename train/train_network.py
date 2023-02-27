@@ -66,7 +66,7 @@ def main():
     valid_loader = DataLoader(valid_ds, batch_size=batch_size, num_workers=num_workers)
 
     model = build_model(config_dict)
-    loss_fn = DiceBoundaryLoss()
+    loss_fn = CEDiceBoundaryLoss()
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-6)
     scheduler = ReduceLROnPlateau(opt, mode='min', patience=5, factor=0.9)

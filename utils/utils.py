@@ -318,15 +318,16 @@ def onehot_to_dist(onehot: torch.Tensor, dtype=torch.int32):
     return result.type(torch.FloatTensor)
 
 
-class DiceBoundaryLoss(nn.Module):
+class CEDiceBoundaryLoss(nn.Module):
     def __init__(self, alpha=0.01):
         super().__init__()
+        self.ce_loss = CrossEntropy(idc=[0, 1])
         self.dice_loss = GeneralizedDice(idc=[0, 1])
         self.boundary_loss = BoundaryLoss(idc=[1])
         self.alpha = alpha
 
-    def forward(self, pred, target_mask, dist_mask):
-        return self.dice_loss(pred, target_mask) + self.alpha * self.boundary_loss(pred, dist_mask)
+    def forward(self, pred_mask, target_mask, dist_mask):
+        return self.ce_loss(pred_mask, target_mask) + self.dice_loss(pred_mask, target_mask) + self.alpha * self.boundary_loss(pred_mask, dist_mask)
 
 
 def enable_dropout(model):
