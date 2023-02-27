@@ -15,6 +15,8 @@ from scipy.ndimage.morphology import distance_transform_edt as edt
 from scipy.ndimage import convolve
 import cv2 as cv
 from scipy.ndimage import distance_transform_edt
+from utils.losses import *
+import matplotlib.pyplot as plt
 
 
 class ConfusionMatrix:
@@ -36,7 +38,7 @@ class ConfusionMatrix:
         self.hausdorff_distances = []
 
     def add_prediction(self, pred, gt):
-        pred = torch.round(torch.sigmoid(pred))
+        pred = torch.argmax(pred, dim=1, keepdim=True)
         self.predictions.extend(list(pred.detach()))
         self.ground_truth.extend(list(gt.detach()))
 
@@ -240,9 +242,9 @@ def load_model(model: nn.Module, path: str):
 class Augmentation:
     def __init__(self):
         self.augmentation = Compose([
-            RandAffineD(prob=0.5, rotate_range=(deg2rad(10), deg2rad(10), deg2rad(10)), scale_range=(0.1, 0.1, 0.1), keys=['image', 'mask']),
+            RandAffineD(prob=0.5, rotate_range=(deg2rad(15), deg2rad(15), deg2rad(15)), scale_range=(0.1, 0.1, 0.1), keys=['image', 'mask']),
             RandFlipD(prob=0.5, keys=['image', 'mask']),
-            RandGaussianNoiseD(prob=1, keys=['image']),
+            RandGaussianNoiseD(prob=0.5, keys=['image']),
         ])
 
     def __call__(self, image, mask):
@@ -257,10 +259,8 @@ def save_nifti_image(file_path, image, affine):
 
 
 def dice_metric(predicted_mask, gt_mask):
-    # predicted_mask = torch.round(torch.sigmoid(predicted_mask)).detach()
     predicted_mask = torch.argmax(predicted_mask, dim=1).detach()
 
-    # gt_mask = gt_mask.detach()
     gt_mask = gt_mask[:, 1].detach()
 
     predicted_mask = predicted_mask.flatten(1)
@@ -276,10 +276,8 @@ def dice_metric(predicted_mask, gt_mask):
 
 
 def intersection_over_union_metric(predicted_mask, gt_mask):
-    # predicted_mask = torch.round(torch.sigmoid(predicted_mask)).detach()
     predicted_mask = torch.argmax(predicted_mask, dim=1).detach()
 
-    # gt_mask = gt_mask.detach()
     gt_mask = gt_mask[:, 1].detach()
 
     predicted_mask = predicted_mask.flatten(1)
@@ -313,3 +311,37 @@ def onehot_to_dist(onehot: torch.Tensor, dtype=torch.int32):
             neg_mask = 1 - pos_mask
             result[k] = torch.from_numpy(distance_transform_edt(neg_mask)) * neg_mask - (torch.from_numpy(distance_transform_edt(pos_mask)) - 1) * pos_mask
     return result.type(torch.FloatTensor)
+
+
+class DiceBoundaryLoss(nn.Module):
+    def __init__(self, alpha=0.01):
+        super().__init__()
+        self.dice_loss = GeneralizedDice(idc=[0, 1])
+        self.boundary_loss = BoundaryLoss(idc=[1])
+        self.alpha = alpha
+
+    def forward(self, pred, target_mask, dist_mask):
+        return self.dice_loss(pred, target_mask) + self.alpha * self.boundary_loss(pred, dist_mask)
+
+
+def enable_dropout(model):
+    """ Function to enable the dropout layers during test-time """
+    for m in model.modules():
+        if m.__class__.__name__.startswith('Dropout'):
+            m.train()
+
+
+def visualize_losses(train_losses, valid_losses):
+    fig, axes = plt.subplots(2)
+    axes[0].plot(train_losses)
+    axes[1].plot(valid_losses)
+    plt.show()
+
+
+def str_to_bool(string):
+    return True if string == "True" else False
+
+
+def print_test_result(test_cfm: ConfusionMatrix):
+    print(f"\ntest result:"
+          f"dice={test_cfm.get_mean_dice()}, iou={test_cfm.get_mean_iou()}\n")
