@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 from models.focalnet import *
-from models.unet import ConvBlock
+from models.unet import ResConvBlock
 from timm.models.layers import to_3tuple
+import torch.nn.functional as F
 
 
 class FocalConvUNet(nn.Module):
@@ -49,15 +50,6 @@ class FocalConvUNet(nn.Module):
             norm_layer=norm_layer if self.path_norm else None,
             is_stem=True
         )
-        self.patch_extend = PatchExtend(
-            img_size=self.patch_embed.patches_resolution,
-            patch_size=patch_size,
-            in_chans=embed_dim[0],
-            embed_dim=embed_dim[0],
-            use_conv_embed=use_conv_embed,
-            norm_layer=norm_layer if self.path_norm else None,
-            is_stem=True
-        )
 
         self.patches_resolution = self.patch_embed.patches_resolution
         self.pos_drop = nn.Dropout(p=drop_rate)
@@ -68,40 +60,44 @@ class FocalConvUNet(nn.Module):
         # build encoder layers
         self.encoder_layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
-            layer = BasicLayer(dim=embed_dim[i_layer],
-                               out_dim=embed_dim[i_layer + 1],
-                               input_resolution=(self.patches_resolution[0] // (2 ** i_layer),
-                                                 self.patches_resolution[1] // (2 ** i_layer),
-                                                 self.patches_resolution[2] // (2 ** i_layer)),
-                               depth=depths[i_layer],
-                               mlp_ratio=self.mlp_ratio,
-                               drop=drop_rate,
-                               drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
-                               norm_layer=norm_layer,
-                               downsample=PatchEmbed,
-                               focal_level=focal_levels[i_layer],
-                               focal_window=focal_windows[i_layer],
-                               use_conv_embed=use_conv_embed,
-                               use_checkpoint=use_checkpoint,
-                               use_layerscale=use_layerscale,
-                               layerscale_value=layerscale_value,
-                               use_postln=use_postln,
-                               use_postln_in_modulation=use_postln_in_modulation,
-                               normalize_modulator=normalize_modulator
-                               )
-            self.encoder_layers.append(layer)
+            self.encoder_layers.append(BasicLayer(dim=embed_dim[i_layer],
+                                                  out_dim=embed_dim[i_layer + 1],
+                                                  input_resolution=(self.patches_resolution[0] // (2 ** i_layer),
+                                                                    self.patches_resolution[1] // (2 ** i_layer),
+                                                                    self.patches_resolution[2] // (2 ** i_layer)),
+                                                  depth=depths[i_layer],
+                                                  mlp_ratio=self.mlp_ratio,
+                                                  drop=drop_rate,
+                                                  drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
+                                                  norm_layer=norm_layer,
+                                                  downsample=PatchEmbed,
+                                                  focal_level=focal_levels[i_layer],
+                                                  focal_window=focal_windows[i_layer],
+                                                  use_conv_embed=use_conv_embed,
+                                                  use_checkpoint=use_checkpoint,
+                                                  use_layerscale=use_layerscale,
+                                                  layerscale_value=layerscale_value,
+                                                  use_postln=use_postln,
+                                                  use_postln_in_modulation=use_postln_in_modulation,
+                                                  normalize_modulator=normalize_modulator
+                                                  ))
 
-        self.input_embedder = ConvBlock(in_ch=in_chans, out_ch=embed_dim[0], kernel_size=3)
-        self.bottleneck_conv = ConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
+        self.residual_conv_layers = nn.ModuleList()
+        for i_layer in range(self.num_layers + 1):
+            in_ch = in_chans if i_layer == 0 else embed_dim[i_layer - 1]
+            out_ch = embed_dim[0] if i_layer == 0 else in_ch
+            self.residual_conv_layers.append(ResConvBlock(in_ch, out_ch, 3))
 
-        self.decoder_layers = nn.ModuleDict()
-        for i in range(len(self.embed_dim) - 1):
+        self.bottleneck_conv = ResConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
+
+        self.decoder_layers = nn.ModuleList()
+        for i in range(len(self.embed_dim)):
             ind = len(self.embed_dim) - 1 - i
-            self.decoder_layers[f'up-{i}'] = nn.ConvTranspose3d(in_channels=embed_dim[ind], out_channels=embed_dim[ind - 1], kernel_size=3, stride=2, padding=1, output_padding=1)
-            self.decoder_layers[f'dropout-{i}'] = nn.Dropout3d(p=0.25)
-            self.decoder_layers[f'expansive-{i}'] = ConvBlock(in_ch=2 * embed_dim[ind - 1], out_ch=embed_dim[ind - 1], kernel_size=3)
+            in_ch = embed_dim[ind]
+            out_ch = embed_dim[ind - 1] if ind > 0 else embed_dim[0]
+            self.decoder_layers.append(FocalConvUpBlock(in_ch, out_ch, dropout_rate=0.25))
 
-        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=2 * embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same'),
+        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same'),
                                                nn.Softmax(dim=1))
 
         self.apply(self._init_weights)
@@ -118,26 +114,42 @@ class FocalConvUNet(nn.Module):
     def forward(self, x):
         shortcut_x = x
         x, D, H, W = self.patch_embed(x)
-        b, L, c = x.shape
         x = self.pos_drop(x)
 
-        residuals = [x.reshape(b, D, H, W, c).permute(0, 4, 1, 2, 3)]
+        residuals = [shortcut_x, reshape_tokens_to_volumes(x, D, H, W, True)]
         for layer in self.encoder_layers:
             x, D, H, W = layer(x, D, H, W)
-            b, L, c = x.shape
-            residuals.append(x.reshape(b, D, H, W, c).permute(0, 4, 1, 2, 3))
+            residuals.append(reshape_tokens_to_volumes(x, D, H, W, True))
 
         x = residuals.pop()
         residuals.reverse()
         x = self.bottleneck_conv(x)
-        for i in range(len(self.embed_dim) - 1):
-            x = self.decoder_layers[f'up-{i}'](x)
-            concat = torch.cat((x, residuals[i]), dim=1)
-            concat = self.decoder_layers[f'dropout-{i}'](concat)
-            x = self.decoder_layers[f'expansive-{i}'](concat)
 
-        x, D, H, W = self.patch_extend(x)
-        b, L, c = x.shape
-        x = x.reshape(b, D, H, W, c).permute(0, 4, 1, 2, 3)
+        for i in range(len(self.embed_dim)):
+            x = self.decoder_layers[i](x, self.residual_conv_layers[len(self.embed_dim) - 1 - i](residuals[i]))
 
-        return self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
+        return self.segmentation_head(x)
+
+
+class FocalConvUpBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1, dropout_rate=0.25):
+        super().__init__()
+        self.up = nn.ConvTranspose3d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, stride=stride, padding=padding, output_padding=output_padding)
+        self.dropout = nn.Dropout3d(dropout_rate)
+        self.expansive = ResConvBlock(2 * out_ch, out_ch, kernel_size)
+
+    def forward(self, x, skip):
+        x = self.up(x)
+        concat = torch.cat((x, skip), dim=1)
+        concat = self.dropout(concat)
+        x = self.expansive(concat)
+        return x
+
+
+def reshape_tokens_to_volumes(x: torch.Tensor, d, h, w, normalize=False):
+    b, L, c = x.shape
+    x = x.reshape(b, d, h, w, c)
+    if normalize:
+        x = F.layer_norm(x, [c])
+    x = x.permute(0, 4, 1, 2, 3)
+    return x
