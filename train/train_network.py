@@ -69,8 +69,8 @@ def main():
     valid_ds = AneurysmDataset(data_path, valid_sub_ses)
 
     train_sampler = None
-    labels_counts = Counter(train_ds.labels)
     if do_sampling:
+        labels_counts = Counter(train_ds.labels)
         target_list = torch.tensor(train_ds.labels)
         weights = torch.FloatTensor([1 / labels_counts[0], 1 / labels_counts[1]]) * (labels_counts[0] + labels_counts[1])
         class_weights = weights[target_list]
@@ -93,7 +93,7 @@ def main():
 
     loss_fn = DiceBoundaryLoss()
 
-    opt = AdamW(model.parameters(), lr=lr)
+    opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-6)
     scheduler = ReduceLROnPlateau(opt, mode='min', patience=5, factor=0.9)
     print(model)
     checkpoint_name = model.__class__.__name__
