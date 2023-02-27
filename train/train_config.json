@@ -1,6 +1,5 @@
 {
-  "model": "focalunet",
-  "multitask": "True",
+  "model": "unet",
   "img_size": 64,
   "in_ch": 1,
   "num_classes": 2,

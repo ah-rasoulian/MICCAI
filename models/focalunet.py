@@ -7,7 +7,6 @@ from timm.models.layers import to_3tuple
 
 class FocalUNet(nn.Module):
     def __init__(self,
-                 multitask=False,
                  img_size=64,
                  patch_size=2,
                  in_chans=1,
@@ -32,7 +31,6 @@ class FocalUNet(nn.Module):
                  ):
         super().__init__()
 
-        self.multitask = multitask
         self.num_layers = len(depths)
         embed_dim = [embed_dim * (2 ** i) for i in range(self.num_layers + 1)]
 
@@ -134,12 +132,6 @@ class FocalUNet(nn.Module):
         self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=embed_dim[0] * 2, out_channels=num_classes, kernel_size=3, padding='same'),
                                                nn.Softmax(dim=1))
 
-        if multitask:
-            num_features = ((img_size // patch_size) // (2 ** self.num_layers)) ** 3 * embed_dim[-1]
-            self.classification_head = nn.Sequential(nn.Flatten(1),
-                                                     nn.Linear(num_features, num_classes),
-                                                     nn.Softmax(dim=1)
-                                                     )
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -164,7 +156,6 @@ class FocalUNet(nn.Module):
         x = residuals.pop()
         residuals.reverse()
         x = x.transpose(1, 2).reshape(x.shape[0], -1, D, H, W)
-        shortcut_bottleneck = x
         x = self.bottleneck_conv(x)
         for i in range(self.num_layers):
             x, D, H, W = self.decoder_layers[f'up-{i}'](x)
@@ -178,7 +169,4 @@ class FocalUNet(nn.Module):
         x, D, H, W = self.patch_extend(x)
         x = x.transpose(1, 2).reshape(x.shape[0], -1, D, H, W)
 
-        if self.multitask:
-            return self.classification_head(shortcut_bottleneck), self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
-        else:
-            return self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
+        return self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))

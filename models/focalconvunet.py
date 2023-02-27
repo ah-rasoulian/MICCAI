@@ -7,7 +7,6 @@ from timm.models.layers import to_3tuple
 
 class FocalConvUNet(nn.Module):
     def __init__(self,
-                 multitask=False,
                  img_size=64,
                  patch_size=2,
                  in_chans=1,
@@ -32,7 +31,6 @@ class FocalConvUNet(nn.Module):
                  ):
         super().__init__()
 
-        self.multitask = multitask
         self.num_layers = len(depths)
         embed_dim = [embed_dim * (2 ** i) for i in range(self.num_layers + 1)]
 
@@ -106,12 +104,6 @@ class FocalConvUNet(nn.Module):
         self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=2 * embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same'),
                                                nn.Softmax(dim=1))
 
-        if multitask:
-            self.classification_head = nn.Sequential(nn.AdaptiveAvgPool3d(1),
-                                                     nn.Flatten(1),
-                                                     nn.Linear(embed_dim[-1], num_classes),
-                                                     nn.Softmax(1),
-                                                     )
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -137,7 +129,6 @@ class FocalConvUNet(nn.Module):
 
         x = residuals.pop()
         residuals.reverse()
-        shortcut_bottleneck = x
         x = self.bottleneck_conv(x)
         for i in range(len(self.embed_dim) - 1):
             x = self.decoder_layers[f'up-{i}'](x)
@@ -149,7 +140,4 @@ class FocalConvUNet(nn.Module):
         b, L, c = x.shape
         x = x.reshape(b, D, H, W, c).permute(0, 4, 1, 2, 3)
 
-        if self.multitask:
-            return self.classification_head(shortcut_bottleneck), self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
-        else:
-            return self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))
+        return self.segmentation_head(torch.cat((x, self.input_embedder(shortcut_x)), dim=1))

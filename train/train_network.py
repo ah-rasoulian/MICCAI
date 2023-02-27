@@ -32,7 +32,6 @@ def main():
     # extract args from config file
     model_name = config_dict["model"]
     assert model_name in ["unet", "focalconvunet", "focalunet", "swinunetr"]
-    multitask = str_to_bool(config_dict["multitask"])
     img_size = config_dict["img_size"]
     in_ch = config_dict["in_ch"]
     num_classes = config_dict["num_classes"]
@@ -66,8 +65,8 @@ def main():
     else:
         train_sub_ses, _, valid_sub_ses = train_valid_test_split(data_path, os.path.join(extra_path, 'data_split'), 0, override=True)
 
-    train_ds = AneurysmDataset(data_path, train_sub_ses, transform=augmentation, shrink_masks=False)
-    valid_ds = AneurysmDataset(data_path, valid_sub_ses, shrink_masks=False)
+    train_ds = AneurysmDataset(data_path, train_sub_ses, transform=augmentation, shrink_masks=True)
+    valid_ds = AneurysmDataset(data_path, valid_sub_ses, shrink_masks=True)
 
     train_sampler = None
     labels_counts = Counter(train_ds.labels)
@@ -81,20 +80,21 @@ def main():
     valid_loader = DataLoader(valid_ds, batch_size=batch_size, num_workers=num_workers)
 
     if model_name == "unet":
-        model = UNet(in_ch, num_classes, unet_embed_dims, multitask=multitask)
+        model = UNet(in_ch, num_classes, unet_embed_dims)
     elif model_name == 'swinunetr':
-        model = SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=48)
+        model = nn.Sequential(SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24),
+                              nn.Softmax(1))
     elif model_name == "focalconvunet":
         model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
-                              embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True, multitask=multitask)
+                              embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True,)
     else:
         model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
-                          embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True, multitask=multitask)
+                          embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
 
-    loss_fn = MultitaskDiceBoundaryLoss()
+    loss_fn = DiceBoundaryLoss()
 
     opt = AdamW(model.parameters(), lr=lr)
-    scheduler = ReduceLROnPlateau(opt, mode='min', patience=5)
+    scheduler = ReduceLROnPlateau(opt, mode='min', patience=5, factor=0.9)
     print(model)
     checkpoint_name = model.__class__.__name__
     early_stopping = EarlyStopping(model, 5, os.path.join(extra_path, f"weights/{checkpoint_name}.pt"))
@@ -102,7 +102,7 @@ def main():
     train_losses = []
     valid_losses = []
     while not early_stopping.early_stop and epochs <= epoch_number:
-        _metrics = train_one_epoch(model, opt, loss_fn, train_loader, valid_loader, multitask=False)
+        _metrics = train_one_epoch(model, opt, loss_fn, train_loader, valid_loader)
         val_loss = _metrics['valid_cfm'].get_mean_loss()
 
         train_losses.extend(_metrics['train_cfm'].losses)
@@ -112,31 +112,17 @@ def main():
         print(f"\nepoch {epoch_number}: train-loss:{_metrics['train_cfm'].get_mean_loss()}, valid_loss:{val_loss}\n"
               f"train-dice={_metrics['train_cfm'].get_mean_dice()}, valid-dice={_metrics['valid_cfm'].get_mean_dice()}\n"
               f"train-iou={_metrics['train_cfm'].get_mean_iou()}, valid-iou={_metrics['valid_cfm'].get_mean_iou()}")
-        if model.multitask:
-            _metrics["train_cfm"].compute_confusion_matrix()
-            _metrics["valid_cfm"].compute_confusion_matrix()
-            print(f"train-acc={_metrics['train_cfm'].get_accuracy().item()}, valid-acc={_metrics['valid_cfm'].get_accuracy().item()}\n"
-                  f"train-recall:{_metrics['train_cfm'].get_recall_sensitivity().item()}, valid-recall:{_metrics['valid_cfm'].get_recall_sensitivity().item()}\n"
-                  f"train-precision:{_metrics['train_cfm'].get_precision().item()}, valid-precision:{_metrics['valid_cfm'].get_precision().item()}\n"
-                  f"train-F1:{_metrics['train_cfm'].get_f1_score().item()}, valid-F1:{_metrics['valid_cfm'].get_f1_score().item()}\n"
-                  f"train-specificity:{_metrics['train_cfm'].get_specificity().item()}, valid-specificity:{_metrics['valid_cfm'].get_specificity().item()}")
 
         early_stopping(val_loss)
         scheduler.step(val_loss)
         epoch_number += 1
 
     if use_validation:
-        test_ds = AneurysmDataset(data_path, test_sub_ses)
+        test_ds = AneurysmDataset(data_path, test_sub_ses, return_dist_map=False)
         test_cfm = ConfusionMatrix()
         test_loader = DataLoader(test_ds, batch_size=batch_size, num_workers=num_workers)
         validation(model, test_loader, test_cfm)
-
-        print(f"\ntest result:"
-              f"dice={test_cfm.get_mean_dice()}, iou={test_cfm.get_mean_iou()}\n")
-        if model.multitask:
-            test_cfm.compute_confusion_matrix()
-            print(f"acc={test_cfm.get_accuracy().item()} specificity:{test_cfm.get_specificity().item()}\n"
-                  f"precision:{test_cfm.get_precision().item()} recall:{test_cfm.get_recall_sensitivity().item()} F1:{test_cfm.get_f1_score().item()}\n")
+        print_test_result(test_cfm)
 
 
 if __name__ == '__main__':
