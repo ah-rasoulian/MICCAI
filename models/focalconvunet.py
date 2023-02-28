@@ -130,7 +130,7 @@ class FocalConvUNet(nn.Module):
 
 
 class FocalConvUpBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1, drop_rate=0.25):
+    def __init__(self, in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1, drop_rate=0.0):
         super().__init__()
         self.up = nn.ConvTranspose3d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, stride=stride, padding=padding, output_padding=output_padding)
         self.expansive = ResConvBlock(2 * out_ch, out_ch, kernel_size, drop_rate)
