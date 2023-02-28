@@ -66,12 +66,13 @@ def main():
     valid_loader = DataLoader(valid_ds, batch_size=batch_size, num_workers=num_workers)
 
     model = build_model(config_dict)
+    checkpoint_name = model.__class__.__name__
+    num_params = sum(p.numel() for p in model.parameters()) / 1e6
+    print("model: ", checkpoint_name, " num-params:", num_params)
     loss_fn = CEDiceBoundaryLoss()
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-6)
     scheduler = ReduceLROnPlateau(opt, mode='min', patience=5, factor=0.9)
-    print(model)
-    checkpoint_name = model.__class__.__name__
     early_stopping = EarlyStopping(model, 5, os.path.join(extra_path, f"weights/{checkpoint_name}.pt"))
     epoch_number = 1
     train_losses = []

@@ -367,7 +367,7 @@ def build_model(config_dict):
     focal_levels = list(config_dict["focal_levels"])
     focal_windows = list(config_dict["focal_windows"])
     if model_name == "unet":
-        model = UNet(in_ch, num_classes, unet_embed_dims)
+        model = UNet(in_ch, num_classes, unet_embed_dims, drop_rate=0.5)
     elif model_name == 'swinunetr':
         model = nn.Sequential(SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24),
                               nn.Softmax(1))
@@ -375,7 +375,7 @@ def build_model(config_dict):
         model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes, drop_rate=0.5,
                               embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
     else:
-        model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
+        model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes, drop_rate=0.5,
                           embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
 
     return model
