@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from models.focalnet import *
-from models.unet import ConvBlock
+from models.unet import ResConvBlock
 from timm.models.layers import to_3tuple
 
 
@@ -102,7 +102,6 @@ class FocalUNet(nn.Module):
                                                          norm_layer=norm_layer if self.path_norm else None,
                                                          is_stem=False
                                                          )
-            self.decoder_layers[f'dropout-{i}'] = nn.Dropout3d(p=0.25)
             self.decoder_layers[f'expansive-{i}'] = BasicLayer(dim=2 * embed_dim[ind],
                                                                out_dim=embed_dim[ind],
                                                                input_resolution=(self.patches_resolution[0] // (2 ** ind),
@@ -124,10 +123,10 @@ class FocalUNet(nn.Module):
                                                                use_postln_in_modulation=use_postln_in_modulation,
                                                                normalize_modulator=normalize_modulator
                                                                )
-            self.decoder_layers[f'embed-reducer-{i}'] = ConvBlock(2 * embed_dim[ind], embed_dim[ind], kernel_size=3)
+            self.decoder_layers[f'embed-reducer-{i}'] = ResConvBlock(2 * embed_dim[ind], embed_dim[ind], kernel_size=3, drop_rate=drop_rate if i <= 1 else 0.)
 
-        self.input_embedder = ConvBlock(in_ch=in_chans, out_ch=embed_dim[0], kernel_size=3)
-        self.bottleneck_conv = ConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
+        self.input_embedder = ResConvBlock(in_ch=in_chans, out_ch=embed_dim[0], kernel_size=3)
+        self.bottleneck_conv = ResConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
 
         self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=embed_dim[0] * 2, out_channels=num_classes, kernel_size=3, padding='same'),
                                                nn.Softmax(dim=1))
@@ -160,9 +159,6 @@ class FocalUNet(nn.Module):
         for i in range(self.num_layers):
             x, D, H, W = self.decoder_layers[f'up-{i}'](x)
             concat = torch.cat((x, residuals[i]), dim=2)
-            concat = concat.transpose(1, 2).reshape(x.shape[0], -1, D, H, W)
-            concat = self.decoder_layers[f'dropout-{i}'](concat)
-            concat = concat.flatten(2).transpose(1, 2)
             x, D, H, W = self.decoder_layers[f'expansive-{i}'](concat, D, H, W)
             x = self.decoder_layers[f'embed-reducer-{i}'](x.transpose(1, 2).reshape(x.shape[0], -1, D, H, W))
 
