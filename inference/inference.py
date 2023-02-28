@@ -41,17 +41,29 @@ def monte_carlo_sampling(model, data_loader, cfm: ConfusionMatrix, device='cuda'
     enable_dropout(model)
     pbar = tqdm(enumerate(data_loader), total=len(data_loader), leave=False)
     pbar.set_description('validating monte-carlo')
+    i = 1
+    _type = 'unet'
     with torch.no_grad():
         for i, (sample, target_mask, dist_mask, target) in pbar:
             sample, target_mask, dist_mask, target = sample.to(device), target_mask.to(device), dist_mask.to(device), target.to(device)
-            predictions = torch.empty(n, *target_mask.shape)
+            predictions = torch.empty(n, *target_mask.shape, device=device)
             for forward_passes in range(n):
                 pred_mask = model(sample)
                 predictions[forward_passes] = pred_mask
 
-            pred_mask = torch.mean(predictions, dim=0)
-            cfm.add_dice(dice_metric(pred_mask, target_mask))
-            cfm.add_iou(intersection_over_union_metric(pred_mask, target_mask))
+            # pred_mask = torch.mean(predictions, dim=0)
+            # cfm.add_dice(dice_metric(pred_mask, target_mask))
+            # cfm.add_iou(intersection_over_union_metric(pred_mask, target_mask))
+            pred_mask = torch.argmax(torch.mean(predictions, dim=0), dim=1).type(torch.int8)
+            variance_mask = torch.argmax(torch.var(predictions, dim=0), dim=1).type(torch.int8)
+            target_mask = torch.argmax(target_mask, dim=1).type(torch.int8)
+            save_nifti_image(os.path.join(f'samples/{_type}/image/image_{i:03d}.nii'), sample, image_affine)
+            save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), target_mask, mask_affine)
+            save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), pred_mask, mask_affine)
+            save_nifti_image(os.path.join(f'samples/{_type}/var/var_mask_{i:03d}.nii'), variance_mask, mask_affine)
+            i += 1
+            if i > 50:
+                return
 
 
 def test_segmentation(model, test_loader, device='cuda'):
@@ -110,10 +122,15 @@ def main():
         test_loader = DataLoader(test_ds, batch_size=16)
         test_cfm = ConfusionMatrix()
         validation(model, test_loader, test_cfm)
-        print_test_result(model.multitask, test_cfm)
-    else:
+        print_test_result(test_cfm)
+    elif setup == "segmentation":
         test_loader = DataLoader(test_ds, batch_size=1)
         test_segmentation(model, test_loader)
+    else:
+        test_loader = DataLoader(test_ds, batch_size=1)
+        test_cfm = ConfusionMatrix()
+        monte_carlo_sampling(model, test_loader, test_cfm)
+        print_test_result(test_cfm)
 
 
 image_affine = None

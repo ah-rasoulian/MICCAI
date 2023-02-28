@@ -249,7 +249,7 @@ class Augmentation:
         self.augmentation = Compose([
             RandAffineD(prob=0.5, rotate_range=(deg2rad(15), deg2rad(15), deg2rad(15)), scale_range=(0.1, 0.1, 0.1), keys=['image', 'mask']),
             RandFlipD(prob=0.5, keys=['image', 'mask']),
-            RandGaussianNoiseD(prob=0.5, keys=['image']),
+            RandGaussianNoiseD(prob=0.5, std=1, keys=['image']),
         ])
 
     def __call__(self, image, mask):
@@ -372,7 +372,7 @@ def build_model(config_dict):
         model = nn.Sequential(SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24),
                               nn.Softmax(1))
     elif model_name == "focalconvunet":
-        model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
+        model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes, drop_rate=0.5,
                               embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
     else:
         model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,

@@ -4,7 +4,7 @@ import torch
 
 
 class UNet(nn.Module):
-    def __init__(self, in_ch, num_classes, embed_dims):
+    def __init__(self, in_ch, num_classes, embed_dims, drop_rate):
         super().__init__()
         self.num_classes = num_classes
         self.embed_dims = embed_dims
@@ -21,8 +21,7 @@ class UNet(nn.Module):
         self.decoder = nn.ModuleDict()
         for i in range(len(self.embed_dims) - 1):
             self.decoder[f'up-{i + 1}'] = nn.ConvTranspose3d(in_channels=self.embed_dims[i], out_channels=self.embed_dims[i + 1], kernel_size=3, stride=2, padding=1, output_padding=1)
-            self.decoder[f'dropout-{i}'] = nn.Dropout3d(p=0.25)
-            self.decoder[f'expansive-{i + 1}'] = ResConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3)
+            self.decoder[f'expansive-{i + 1}'] = ResConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3, drop_rate=drop_rate if i <= 1 else 0)
 
         self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same'),
                                                nn.Softmax(dim=1))
@@ -39,14 +38,13 @@ class UNet(nn.Module):
         for i in range(len(self.embed_dims) - 1):
             x = self.decoder[f'up-{i + 1}'](x)
             concat = torch.cat((x, residuals[i]), dim=1)
-            concat = self.decoder[f'dropout-{i}'](concat)
             x = self.decoder[f'expansive-{i + 1}'](concat)
 
         return self.segmentation_head(x)
 
 
 class ResConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size):
+    def __init__(self, in_ch, out_ch, kernel_size, drop_rate=0):
         super().__init__()
         self.conv1 = nn.Conv3d(in_ch, out_ch, kernel_size, padding='same')
         self.norm1 = nn.LayerNorm([out_ch])
@@ -56,6 +54,7 @@ class ResConvBlock(nn.Module):
         self.conv3 = nn.Conv3d(in_ch, out_ch, kernel_size, padding='same')
         self.norm3 = nn.LayerNorm([out_ch])
         self.act = nn.GELU()
+        self.dropout = nn.Dropout3d(drop_rate)
 
     def forward(self, x):
         residual = x
@@ -74,4 +73,4 @@ class ResConvBlock(nn.Module):
 
         x = x + residual
         x = self.act(x)
-        return x
+        return self.dropout(x)

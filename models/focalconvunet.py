@@ -52,7 +52,6 @@ class FocalConvUNet(nn.Module):
         )
 
         self.patches_resolution = self.patch_embed.patches_resolution
-        self.pos_drop = nn.Dropout(p=drop_rate)
 
         # stochastic depth
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
@@ -67,7 +66,7 @@ class FocalConvUNet(nn.Module):
                                                                     self.patches_resolution[2] // (2 ** i_layer)),
                                                   depth=depths[i_layer],
                                                   mlp_ratio=self.mlp_ratio,
-                                                  drop=drop_rate,
+                                                  drop=0.0,
                                                   drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
                                                   norm_layer=norm_layer,
                                                   downsample=PatchEmbed,
@@ -86,16 +85,16 @@ class FocalConvUNet(nn.Module):
         for i_layer in range(self.num_layers + 1):
             in_ch = in_chans if i_layer == 0 else embed_dim[i_layer - 1]
             out_ch = embed_dim[0] if i_layer == 0 else in_ch
-            self.residual_conv_layers.append(ResConvBlock(in_ch, out_ch, 3))
+            self.residual_conv_layers.append(ResConvBlock(in_ch, out_ch, 3, 0))
 
-        self.bottleneck_conv = ResConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
+        self.bottleneck_conv = ResConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3, drop_rate=0)
 
         self.decoder_layers = nn.ModuleList()
         for i in range(len(self.embed_dim)):
             ind = len(self.embed_dim) - 1 - i
             in_ch = embed_dim[ind]
             out_ch = embed_dim[ind - 1] if ind > 0 else embed_dim[0]
-            self.decoder_layers.append(FocalConvUpBlock(in_ch, out_ch, dropout_rate=0.25))
+            self.decoder_layers.append(FocalConvUpBlock(in_ch, out_ch, drop_rate=drop_rate if i <= 1 else 0.))
 
         self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same'),
                                                nn.Softmax(dim=1))
@@ -114,7 +113,6 @@ class FocalConvUNet(nn.Module):
     def forward(self, x):
         shortcut_x = x
         x, D, H, W = self.patch_embed(x)
-        x = self.pos_drop(x)
 
         residuals = [shortcut_x, reshape_tokens_to_volumes(x, D, H, W, True)]
         for layer in self.encoder_layers:
@@ -132,16 +130,14 @@ class FocalConvUNet(nn.Module):
 
 
 class FocalConvUpBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1, dropout_rate=0.25):
+    def __init__(self, in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1, drop_rate=0.25):
         super().__init__()
         self.up = nn.ConvTranspose3d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, stride=stride, padding=padding, output_padding=output_padding)
-        self.dropout = nn.Dropout3d(dropout_rate)
-        self.expansive = ResConvBlock(2 * out_ch, out_ch, kernel_size)
+        self.expansive = ResConvBlock(2 * out_ch, out_ch, kernel_size, drop_rate)
 
     def forward(self, x, skip):
         x = self.up(x)
         concat = torch.cat((x, skip), dim=1)
-        concat = self.dropout(concat)
         x = self.expansive(concat)
         return x
 
