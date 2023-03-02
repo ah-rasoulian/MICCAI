@@ -61,13 +61,13 @@ class ConfusionMatrix:
         self.hausdorff_distances(pred_mask, target_mask)
 
     def get_mean_dice(self):
-        return self.dice.aggregate("mean")
+        return self.dice.aggregate("mean").item()
 
     def get_mean_iou(self):
-        return self.iou.aggregate("mean")
+        return self.iou.aggregate("mean").item()
 
     def get_mean_hausdorff_distance(self):
-        return self.hausdorff_distances.aggregate("mean")
+        return self.hausdorff_distances.aggregate("mean").item()
 
     def compute_confusion_matrix(self):
         self.predictions = torch.stack(self.predictions).to(self.device)
@@ -225,7 +225,7 @@ def str_to_bool(string):
 
 def print_test_result(test_cfm: ConfusionMatrix):
     print(f"\ntest result:"
-          f"dice={test_cfm.get_mean_dice()}, iou={test_cfm.get_mean_iou()}\n")
+          f"dice={test_cfm.get_mean_dice()}, iou={test_cfm.get_mean_iou()}, hd={test_cfm.get_mean_hausdorff_distance()}\n")
 
 
 def build_model(config_dict):

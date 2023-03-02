@@ -60,7 +60,7 @@ def main():
         target_list = torch.tensor(train_ds.labels)
         weights = torch.FloatTensor([1 / labels_counts[0], 1 / labels_counts[1]]) * (labels_counts[0] + labels_counts[1])
         class_weights = weights[target_list]
-        train_sampler = WeightedRandomSampler(class_weights, len(class_weights), replacement=True)
+        train_sampler = WeightedRandomSampler(class_weights, 2 * labels_counts[0], replacement=True)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=num_workers)
     valid_loader = DataLoader(valid_ds, batch_size=batch_size, num_workers=num_workers)
@@ -87,7 +87,8 @@ def main():
 
         print(f"\nepoch {epoch_number}: train-loss:{_metrics['train_cfm'].get_mean_loss()}, valid_loss:{val_loss}\n"
               f"train-dice={_metrics['train_cfm'].get_mean_dice()}, valid-dice={_metrics['valid_cfm'].get_mean_dice()}\n"
-              f"train-iou={_metrics['train_cfm'].get_mean_iou()}, valid-iou={_metrics['valid_cfm'].get_mean_iou()}")
+              f"train-iou={_metrics['train_cfm'].get_mean_iou()}, valid-iou={_metrics['valid_cfm'].get_mean_iou()}\n"
+              f"train-95hd={_metrics['train_cfm'].get_mean_hausdorff_distance()}, valid-95hd={_metrics['valid_cfm'].get_mean_hausdorff_distance()}")
 
         early_stopping(val_loss)
         scheduler.step(val_loss)
