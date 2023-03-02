@@ -128,8 +128,7 @@ class FocalUNet(nn.Module):
         self.input_embedder = ResConvBlock(in_ch=in_chans, out_ch=embed_dim[0], kernel_size=3)
         self.bottleneck_conv = ResConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
 
-        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=embed_dim[0] * 2, out_channels=num_classes, kernel_size=3, padding='same'),
-                                               nn.Softmax(dim=1))
+        self.segmentation_head = nn.Conv3d(in_channels=embed_dim[0] * 2, out_channels=num_classes, kernel_size=3, padding='same')
 
         self.apply(self._init_weights)
 

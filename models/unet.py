@@ -11,7 +11,8 @@ class UNet(nn.Module):
 
         encoder = OrderedDict()
         for i in range(len(self.embed_dims) - 1):
-            encoder[f'contracting-{i + 1}'] = ResConvBlock(in_ch=in_ch if i == 0 else self.embed_dims[i - 1], out_ch=self.embed_dims[i], kernel_size=3)
+            encoder[f'contracting-{i + 1}'] = ResConvBlock(in_ch=in_ch if i == 0 else self.embed_dims[i - 1], out_ch=self.embed_dims[i], kernel_size=3,
+                                                           drop_rate=drop_rate if len(self.embed_dims) - 1 - i <= 1 else 0)
             encoder[f'pool-{i + 1}'] = nn.MaxPool3d(kernel_size=2, stride=2)
         self.encoder = nn.ModuleDict(encoder)
 
@@ -21,10 +22,10 @@ class UNet(nn.Module):
         self.decoder = nn.ModuleDict()
         for i in range(len(self.embed_dims) - 1):
             self.decoder[f'up-{i + 1}'] = nn.ConvTranspose3d(in_channels=self.embed_dims[i], out_channels=self.embed_dims[i + 1], kernel_size=3, stride=2, padding=1, output_padding=1)
-            self.decoder[f'expansive-{i + 1}'] = ResConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3, drop_rate=drop_rate if i <= 1 else 0)
+            self.decoder[f'expansive-{i + 1}'] = ResConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3,
+                                                              drop_rate=drop_rate if i <= 1 else 0)
 
-        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same'),
-                                               nn.Softmax(dim=1))
+        self.segmentation_head = nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same')
 
     def forward(self, x):
         residuals = []

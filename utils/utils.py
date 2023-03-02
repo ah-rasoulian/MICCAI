@@ -201,6 +201,7 @@ class CEDiceBoundaryLoss(nn.Module):
         self.alpha = alpha
 
     def forward(self, pred_mask, target_mask, dist_mask):
+        pred_mask = F.softmax(pred_mask, dim=1)
         return self.ce_loss(pred_mask, target_mask) + self.dice_loss(pred_mask, target_mask) + self.alpha * self.boundary_loss(pred_mask, dist_mask)
 
 
@@ -243,8 +244,7 @@ def build_model(config_dict):
     if model_name == "unet":
         model = UNet(in_ch, num_classes, unet_embed_dims, drop_rate=0.5)
     elif model_name == 'swinunetr':
-        model = nn.Sequential(SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24, drop_rate=0.5),
-                              nn.Softmax(1))
+        model = SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24, drop_rate=0.5)
     elif model_name == "focalconvunet":
         model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes, drop_rate=0.5,
                               embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)

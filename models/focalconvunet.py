@@ -96,8 +96,7 @@ class FocalConvUNet(nn.Module):
             out_ch = embed_dim[ind - 1] if ind > 0 else embed_dim[0]
             self.decoder_layers.append(FocalConvUpBlock(in_ch, out_ch, drop_rate=drop_rate if i <= 1 else 0.))
 
-        self.segmentation_head = nn.Sequential(nn.Conv3d(in_channels=embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same'),
-                                               nn.Softmax(dim=1))
+        self.segmentation_head = nn.Conv3d(in_channels=embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same')
 
         self.apply(self._init_weights)
 
