@@ -10,7 +10,8 @@ import nibabel as nib
 import torch
 from monai.transforms import NormalizeIntensity
 import torch.nn as nn
-from utils.utils import binary_to_onehot, onehot_to_dist
+from utils.utils import onehot_to_dist
+from monai.transforms.post.array import one_hot
 
 
 def find_sub_ses_pairs(data_path: str):
@@ -136,8 +137,7 @@ class AneurysmDataset(Dataset):
 
         image = self.normalize(image)
 
-        mask = mask.squeeze()  # to remove the channel of mask
-        onehot_mask = binary_to_onehot(mask)
+        onehot_mask = one_hot(mask, num_classes=2, dim=0)
         dist_map = -1
         if self.return_dist_map:
             dist_map = onehot_to_dist(onehot_mask)

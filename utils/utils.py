@@ -1,19 +1,9 @@
 import torch.nn as nn
-import torch
-import numpy as np
-import cv2
 import torch.nn.functional as F
 from sklearn import metrics
-from skimage.filters import threshold_otsu
-from monai.metrics.utils import get_mask_edges, get_surface_distance
-from torchvision.transforms import transforms
 from monai.transforms import Compose, RandAffineD, RandFlipD, RandGaussianNoiseD
 from numpy import deg2rad
-import random
 import nibabel as nib
-from scipy.ndimage.morphology import distance_transform_edt as edt
-from scipy.ndimage import convolve
-import cv2 as cv
 from scipy.ndimage import distance_transform_edt
 from utils.losses import *
 import matplotlib.pyplot as plt
@@ -22,6 +12,9 @@ from models.focalunet import FocalUNet
 from models.focalconvunet import FocalConvUNet
 from monai.networks.nets import SwinUNETR
 from timm.models.layers import to_3tuple
+
+from monai.transforms.post.array import one_hot
+from monai.metrics import DiceMetric, MeanIoU, HausdorffDistanceMetric
 
 
 class ConfusionMatrix:
@@ -38,14 +31,16 @@ class ConfusionMatrix:
         self.false_positives = None
         self.false_negatives = None
 
-        self.dices = []
-        self.IoUs = []
-        self.hausdorff_distances = []
+        self.dice = DiceMetric(include_background=False, reduction="none")
+        self.iou = MeanIoU(include_background=False, reduction="none")
+        self.hausdorff_distances = HausdorffDistanceMetric(include_background=False, percentile=95, directed=True, reduction="none")
 
-    def add_prediction(self, pred, gt):
-        pred = torch.argmax(pred, dim=1, keepdim=True)
-        self.predictions.extend(list(pred.detach()))
-        self.ground_truth.extend(list(gt.detach()))
+    def add_prediction(self, pred_mask, target_mask):
+        pred_mask = torch.argmax(pred_mask, dim=1, keepdim=True).detach
+        target_mask = target_mask.detach()
+
+        self.predictions.extend(list(pred_mask.detach()))
+        self.ground_truth.extend(list(target_mask.detach()))
 
     def add_number_of_samples(self, new_samples):
         self.number_of_samples += new_samples
@@ -56,23 +51,23 @@ class ConfusionMatrix:
     def get_mean_loss(self):
         return sum(self.losses) / self.number_of_samples
 
-    def add_dice(self, dice):
-        self.dices.extend(list(dice))
+    def add_dice(self, pred_mask, target_mask):
+        self.dice(pred_mask, target_mask)
 
-    def add_iou(self, iou):
-        self.IoUs.extend(list(iou))
+    def add_iou(self, pred_mask, target_mask):
+        self.iou(pred_mask, target_mask)
 
-    def add_hausdorff_distance(self, hd):
-        self.hausdorff_distances.extend(list(hd))
+    def add_hausdorff_distance(self, pred_mask, target_mask):
+        self.hausdorff_distances(pred_mask, target_mask)
 
     def get_mean_dice(self):
-        return torch.nanmean(torch.tensor(self.dices))
+        return self.dice.aggregate("mean")
 
     def get_mean_iou(self):
-        return torch.nanmean(torch.tensor(self.IoUs))
+        return self.iou.aggregate("mean")
 
     def get_mean_hausdorff_distance(self):
-        return torch.nanmean(torch.tensor(self.hausdorff_distances))
+        return self.hausdorff_distances.aggregate("mean")
 
     def compute_confusion_matrix(self):
         self.predictions = torch.stack(self.predictions).to(self.device)
@@ -297,12 +292,10 @@ def intersection_over_union_metric(predicted_mask, gt_mask):
     return iou
 
 
-def binary_to_onehot(tensor: torch.Tensor):
-    # maps a binary tensor to an onehot tensor
-    onehot = torch.zeros(2, *tensor.shape, device=tensor.device)
-    onehot[1, ...] = tensor
-    onehot[0, ...] = 1 - tensor
-    return onehot
+def pred_mask_to_onehot(pred_mask):
+    pred_mask = F.softmax(pred_mask, dim=1)
+    pred_mask = torch.argmax(pred_mask, dim=1, keepdim=True)
+    return one_hot(pred_mask, num_classes=2, dim=1)
 
 
 def onehot_to_dist(onehot: torch.Tensor, dtype=torch.int32):
@@ -369,7 +362,7 @@ def build_model(config_dict):
     if model_name == "unet":
         model = UNet(in_ch, num_classes, unet_embed_dims, drop_rate=0.5)
     elif model_name == 'swinunetr':
-        model = nn.Sequential(SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24),
+        model = nn.Sequential(SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24, drop_rate=0.5),
                               nn.Softmax(1))
     elif model_name == "focalconvunet":
         model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes, drop_rate=0.5,
