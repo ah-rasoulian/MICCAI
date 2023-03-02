@@ -119,91 +119,6 @@ class ConfusionMatrix:
         return np.array(scores)
 
 
-# class FocalLoss(nn.Module):
-#     def __init__(self, gamma=2, alpha=-1, reduction='mean'):
-#         super().__init__()
-#         self.gamma = gamma
-#         self.alpha = alpha
-#         self.reduction = reduction
-#
-#     def forward(self, pred, gt):
-#         sigmoid = torch.sigmoid(pred)
-#
-#         bce = F.binary_cross_entropy_with_logits(pred, gt, reduction='none')
-#         p_t = sigmoid * gt + (1 - sigmoid) * (1 - gt)
-#         focal_loss = bce * (1 - p_t) ** self.gamma
-#
-#         if self.alpha > 0:
-#             alpha_t = self.alpha * gt + (1 - self.alpha) * (1 - gt)
-#             focal_loss = alpha_t * focal_loss
-#
-#         if self.reduction == 'sum':
-#             reduced_loss = focal_loss.sum()
-#         else:
-#             reduced_loss = focal_loss.mean()
-#
-#         return reduced_loss
-#
-#
-# class DiceLoss(nn.Module):
-#     def __init__(self, smooth=1e-10):
-#         super(DiceLoss, self).__init__()
-#         self.smooth = smooth
-#
-#     def forward(self, inputs, targets):
-#         inputs = torch.sigmoid(inputs)
-#
-#         # flatten label and prediction tensors
-#         inputs = inputs.reshape(-1)
-#         targets = targets.reshape(-1)
-#
-#         intersection = torch.sum(inputs * targets)
-#         dice = (2. * intersection + self.smooth) / (torch.sum(inputs) + torch.sum(targets) + self.smooth)
-#
-#         return 1 - dice
-#
-#
-# class DiceSquareLoss(nn.Module):
-#     def __init__(self, smooth=1e-5):
-#         super(DiceSquareLoss, self).__init__()
-#         self.smooth = smooth
-#
-#     def forward(self, inputs, targets):
-#         inputs = torch.sigmoid(inputs)
-#
-#         # flatten label and prediction tensors
-#         inputs = inputs.view(-1)
-#         targets = targets.view(-1)
-#
-#         intersection = (inputs * targets).sum()
-#         dice = (2. * intersection + self.smooth) / ((inputs * inputs).sum() + targets.sum() + self.smooth)
-#
-#         return 1 - dice
-#
-#
-# class DiceBCELoss(nn.Module):
-#     def __init__(self, smooth=1e-5):
-#         super(DiceBCELoss, self).__init__()
-#         self.dice = DiceLoss(smooth)
-#
-#     def forward(self, inputs, targets):
-#         dice_loss = self.dice(inputs, targets)
-#         bce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
-#         return bce_loss + dice_loss
-#
-#
-# class DiceFocalLoss(nn.Module):
-#     def __init__(self, smooth=1e-5):
-#         super(DiceFocalLoss, self).__init__()
-#         self.dice = DiceLoss(smooth)
-#         self.focal = FocalLoss()
-#
-#     def forward(self, inputs, targets):
-#         dice_loss = self.dice(inputs, targets)
-#         focal_bce = self.focal(inputs, targets)
-#         return dice_loss + focal_bce
-
-
 class EarlyStopping:
     def __init__(self, model: nn.Module, patience: int, path_to_save: str, gamma=0):
         assert patience > 0, 'patience must be positive'
@@ -256,40 +171,6 @@ class Augmentation:
 def save_nifti_image(file_path, image, affine):
     image = nib.Nifti1Image(image.squeeze().cpu().numpy(), affine)
     nib.save(image, file_path)
-
-
-def dice_metric(predicted_mask, gt_mask):
-    predicted_mask = torch.argmax(predicted_mask, dim=1).detach()
-
-    gt_mask = gt_mask[:, 1].detach()
-
-    predicted_mask = predicted_mask.flatten(1)
-    gt_mask = gt_mask.flatten(1)
-
-    intersection = torch.sum(predicted_mask * gt_mask, dim=1)
-    gt_sum = torch.sum(gt_mask, dim=1)
-    pred_sum = torch.sum(predicted_mask, dim=1)
-    summation = pred_sum + gt_sum
-    dice = torch.divide(2 * intersection, summation)
-    dice[gt_sum == 0] = torch.nan
-    return dice
-
-
-def intersection_over_union_metric(predicted_mask, gt_mask):
-    predicted_mask = torch.argmax(predicted_mask, dim=1).detach()
-
-    gt_mask = gt_mask[:, 1].detach()
-
-    predicted_mask = predicted_mask.flatten(1)
-    gt_mask = gt_mask.flatten(1)
-
-    intersection = torch.sum(predicted_mask * gt_mask, dim=1)
-    gt_sum = torch.sum(gt_mask, dim=1)
-    pred_sum = torch.sum(predicted_mask, dim=1)
-    union = pred_sum + gt_sum - intersection
-    iou = torch.divide(intersection, union)
-    iou[gt_sum == 0] = torch.nan
-    return iou
 
 
 def pred_mask_to_onehot(pred_mask):
