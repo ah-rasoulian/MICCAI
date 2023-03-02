@@ -4,6 +4,7 @@ from utils.dataset import *
 import os
 from tqdm import tqdm
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import argparse
 import json
@@ -18,8 +19,9 @@ def validation(model, data_loader, cfm: ConfusionMatrix, loss_fn=None, device='c
     model.eval()
     model = model[0]
 
-    # crf_layer = CRF(iterations=5, bilateral_weight=3, gaussian_weight=1, bilateral_spatial_sigma=5,
-    #                 bilateral_color_sigma=0.5, gaussian_spatial_sigma=5, update_factor=3)
+    crf_layer = CRF(iterations=5, bilateral_weight=3, gaussian_weight=1, bilateral_spatial_sigma=5,
+                    bilateral_color_sigma=0.5, gaussian_spatial_sigma=5, update_factor=3)
+    cfm2 = ConfusionMatrix()
 
     pbar_valid = tqdm(enumerate(data_loader), total=len(data_loader), leave=False)
     pbar_valid.set_description('validating')
@@ -36,6 +38,15 @@ def validation(model, data_loader, cfm: ConfusionMatrix, loss_fn=None, device='c
             cfm.add_dice(pred_mask_onehot, target_mask)
             cfm.add_iou(pred_mask_onehot, target_mask)
             cfm.add_hausdorff_distance(pred_mask_onehot, target_mask)
+
+            sample = (sample - sample.min()) / (sample.max() - sample.min())
+            crf_mask = crf_layer(pred_mask.cpu(), sample.cpu()).to(device)
+            crf_mask_onehot = pred_mask_to_onehot(crf_mask)
+            cfm.add_dice(crf_mask_onehot, target_mask)
+            cfm.add_iou(crf_mask_onehot, target_mask)
+            cfm.add_hausdorff_distance(crf_mask_onehot, target_mask)
+    print("crf:")
+    print_test_result(cfm2)
 
 
 def monte_carlo_sampling(model, data_loader, cfm: ConfusionMatrix, device='cuda', n=10):
@@ -92,18 +103,19 @@ def test_segmentation(model, test_loader, device='cuda'):
                 pred_mask = model(sample)
                 # sample = (sample - sample.min()) / (sample.max() - sample.min())
                 # crf_mask = crf_layer(pred_mask.cpu(), sample.cpu()).to(device)
-
-                cfm.add_dice(pred_mask, target_mask)
+                pred_mask_onehot = pred_mask_to_onehot(pred_mask)
+                cfm.add_dice(pred_mask_onehot, target_mask)
                 # pred_mask = torch.argmax(pred_mask, dim=1).type(torch.int8)
                 # crf_mask = torch.argmax(crf_mask, dim=1).type(torch.int8)
                 # target_mask = torch.argmax(target_mask, dim=1).type(torch.int8)
-                # save_nifti_image(os.path.join(f'samples/{_type}/image/image_{i:03d}.nii'), sample, image_affine)
-                # save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), target_mask, mask_affine)
-                # save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), pred_mask, mask_affine)
+                save_nifti_image(os.path.join(f'samples/{_type}/image/image_{i:03d}.nii'), sample, image_affine)
+                save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), target_mask, mask_affine)
+                save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), pred_mask, mask_affine)
                 # save_nifti_image(os.path.join(f'samples/{_type}/pred/crf_mask_{i:03d}.nii'), crf_mask, mask_affine)
                 i += 1
                 if i > 5:
                     break
+    print(cfm.dice.get_buffer(), cfm.get_mean_dice())
 
 
 def main():
@@ -126,6 +138,8 @@ def main():
         test_sub_ses = pickle.load(f)
 
     model = build_model(config_dict)
+    model = nn.Sequential(model,
+                          nn.Softmax(dim=1))
 
     checkpoint_path = os.path.join(extra_path, f"weights/{checkpoint_name}")
     load_model(model, checkpoint_path)

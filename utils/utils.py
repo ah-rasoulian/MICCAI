@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn import metrics
@@ -169,6 +170,9 @@ class Augmentation:
 
 
 def save_nifti_image(file_path, image, affine):
+    assert image.dim() == 5 and image.shape[0] == 1, "expected 1 in batch format"  # 1, c, d, h, w
+    if image.shape[1] > 1:
+        image = torch.argmax(image, dim=1).type(torch.int8)
     image = nib.Nifti1Image(image.squeeze().cpu().numpy(), affine)
     nib.save(image, file_path)
 
