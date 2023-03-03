@@ -60,7 +60,7 @@ def main():
         target_list = torch.tensor(train_ds.labels)
         weights = torch.FloatTensor([1 / labels_counts[0], 1 / labels_counts[1]]) * (labels_counts[0] + labels_counts[1])
         class_weights = weights[target_list]
-        train_sampler = WeightedRandomSampler(class_weights, 2 * labels_counts[0], replacement=True)
+        train_sampler = WeightedRandomSampler(class_weights, len(class_weights), replacement=True)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=num_workers)
     valid_loader = DataLoader(valid_ds, batch_size=batch_size, num_workers=num_workers)

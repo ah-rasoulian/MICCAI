@@ -172,13 +172,14 @@ class Augmentation:
 def save_nifti_image(file_path, image, affine):
     assert image.dim() == 5 and image.shape[0] == 1, "expected 1 in batch format"  # 1, c, d, h, w
     if image.shape[1] > 1:
-        image = image[:, 1].type(torch.int8)  # getting the mask for foreground
+        image = image[:, 1]  # getting the mask for foreground
     image = nib.Nifti1Image(image.squeeze().cpu().numpy(), affine)
     nib.save(image, file_path)
 
 
-def pred_mask_to_onehot(pred_mask):
-    pred_mask = F.softmax(pred_mask, dim=1)
+def pred_mask_to_onehot(pred_mask, softmax=True):
+    if softmax:
+        pred_mask = F.softmax(pred_mask, dim=1)
     pred_mask = torch.argmax(pred_mask, dim=1, keepdim=True)
     return one_hot(pred_mask, num_classes=2, dim=1)
 

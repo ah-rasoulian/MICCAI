@@ -1,11 +1,11 @@
 {
-  "model": "focalconvunet",
+  "model": "unet",
   "img_size": 64,
   "in_ch": 1,
   "num_classes": 2,
 
   "epochs": -1,
-  "batch_size": 16,
+  "batch_size": 12,
   "num_workers": 4,
   "lr": 0.001,
   "do_augmentation": "True",

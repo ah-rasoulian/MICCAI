@@ -1,7 +1,7 @@
 {
-  "setup": "monte-carlo",
-  "model": "focalconvunet",
-  "checkpoint_name": "FocalConvUNet.pt",
+  "setup": "classification",
+  "model": "swinunetr",
+  "checkpoint_name": "Sequential.pt",
   "img_size": 64,
   "in_ch": 1,
   "num_classes": 2,

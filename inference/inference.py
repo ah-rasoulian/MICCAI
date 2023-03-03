@@ -9,19 +9,21 @@ import torch.nn.functional as F
 import argparse
 import json
 from torch.utils.data import DataLoader
-from monai.networks.blocks import CRF
+# from monai.networks.blocks import CRF
 from monai.metrics import compute_dice, compute_hausdorff_distance
 from monai.transforms.post.array import one_hot
+from models.crf import CRF
+import cc3d
 
 
 def validation(model, data_loader, cfm: ConfusionMatrix, loss_fn=None, device='cuda'):
     model.to(device)
     model.eval()
-    model = model[0]
+    # model = model[0]
 
-    crf_layer = CRF(iterations=5, bilateral_weight=3, gaussian_weight=1, bilateral_spatial_sigma=5,
-                    bilateral_color_sigma=0.5, gaussian_spatial_sigma=5, update_factor=3)
-    cfm2 = ConfusionMatrix()
+    # crf_layer = CRF(iterations=5, bilateral_weight=3, gaussian_weight=1, bilateral_spatial_sigma=5,
+    #                 bilateral_color_sigma=0.5, gaussian_spatial_sigma=5, update_factor=3)
+    # cfm2 = ConfusionMatrix()
 
     pbar_valid = tqdm(enumerate(data_loader), total=len(data_loader), leave=False)
     pbar_valid.set_description('validating')
@@ -39,14 +41,14 @@ def validation(model, data_loader, cfm: ConfusionMatrix, loss_fn=None, device='c
             cfm.add_iou(pred_mask_onehot, target_mask)
             cfm.add_hausdorff_distance(pred_mask_onehot, target_mask)
 
-            sample = (sample - sample.min()) / (sample.max() - sample.min())
-            crf_mask = crf_layer(pred_mask.cpu(), sample.cpu()).to(device)
-            crf_mask_onehot = pred_mask_to_onehot(crf_mask)
-            cfm.add_dice(crf_mask_onehot, target_mask)
-            cfm.add_iou(crf_mask_onehot, target_mask)
-            cfm.add_hausdorff_distance(crf_mask_onehot, target_mask)
-    print("crf:")
-    print_test_result(cfm2)
+    #         sample = (sample - sample.min()) / (sample.max() - sample.min())
+    #         crf_mask = crf_layer(pred_mask.cpu(), sample.cpu()).to(device)
+    #         crf_mask_onehot = pred_mask_to_onehot(crf_mask)
+    #         cfm.add_dice(crf_mask_onehot, target_mask)
+    #         cfm.add_iou(crf_mask_onehot, target_mask)
+    #         cfm.add_hausdorff_distance(crf_mask_onehot, target_mask)
+    # print("crf:")
+    # print_test_result(cfm2)
 
 
 def monte_carlo_sampling(model, data_loader, cfm: ConfusionMatrix, device='cuda', n=10):
@@ -55,31 +57,31 @@ def monte_carlo_sampling(model, data_loader, cfm: ConfusionMatrix, device='cuda'
     enable_dropout(model)
     pbar = tqdm(enumerate(data_loader), total=len(data_loader), leave=False)
     pbar.set_description('validating monte-carlo')
-    i = 1
     _type = 'unet'
     with torch.no_grad():
         for i, (sample, target_mask, dist_mask, target) in pbar:
             sample, target_mask, dist_mask, target = sample.to(device), target_mask.to(device), dist_mask.to(device), target.to(device)
             predictions = torch.empty(n, *target_mask.shape, device=device)
             for forward_passes in range(n):
-                pred_mask = model(sample)
+                pred_mask = F.softmax(model(sample), dim=1)
                 predictions[forward_passes] = pred_mask
 
             pred_mask = torch.mean(predictions, dim=0)
-            cfm.add_dice(dice_metric(pred_mask, target_mask))
-            cfm.add_iou(intersection_over_union_metric(pred_mask, target_mask))
-            # pred_mask = torch.argmax(torch.mean(predictions, dim=0), dim=1).type(torch.int8)
-            # variance_mask = torch.var(predictions, dim=0)
-            # print(torch.norm(variance_mask[:, 0], torch.norm(variance_mask[:, 1])))
-            # target_mask = torch.argmax(target_mask, dim=1).type(torch.int8)
-            # save_nifti_image(os.path.join(f'samples/{_type}/image/image_{i:03d}.nii'), sample, image_affine)
-            # save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), target_mask, mask_affine)
-            # save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), pred_mask, mask_affine)
-            # save_nifti_image(os.path.join(f'samples/{_type}/var/var_mask_bg_{i:03d}.nii'), variance_mask[:, 0], mask_affine)
-            # save_nifti_image(os.path.join(f'samples/{_type}/var/var_mask_fg_{i:03d}.nii'), variance_mask[:, 1], mask_affine)
-            # i += 1
-            # if i > 10:
-            #     return
+            pred_mask_onehot = pred_mask_to_onehot(pred_mask, softmax=False)
+
+            cfm.add_dice(pred_mask_onehot, target_mask)
+            cfm.add_iou(pred_mask_onehot, target_mask)
+            cfm.add_hausdorff_distance(pred_mask_onehot, target_mask)
+            variance_mask = torch.var(predictions, dim=0)
+
+            save_nifti_image(os.path.join(f'samples/{_type}/image/image_{i:03d}.nii'), sample, image_affine)
+            save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), target_mask, mask_affine)
+            save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), pred_mask_onehot, mask_affine)
+            save_nifti_image(os.path.join(f'samples/{_type}/var/var_mask_fg_{i:03d}.nii'), variance_mask, mask_affine)
+            for j in range(n):
+                save_nifti_image(os.path.join(f'samples/{_type}/var/pred_fg_{i:03d}_{j}.nii'), predictions[j], mask_affine)
+            if i > 1:
+                return
 
 
 def test_segmentation(model, test_loader, device='cuda'):
@@ -96,26 +98,44 @@ def test_segmentation(model, test_loader, device='cuda'):
                     bilateral_color_sigma=0.5, gaussian_spatial_sigma=5, update_factor=3)
     crf_layer.eval()
     cfm = ConfusionMatrix()
+    # cfm2 = ConfusionMatrix()
     with torch.no_grad():
         for sample, target_mask, dist_mask, target in pbar:
             sample, target_mask, target = sample.to(device), target_mask.to(device), target.to(device)
             if target == 1:
                 pred_mask = model(sample)
-                # sample = (sample - sample.min()) / (sample.max() - sample.min())
-                # crf_mask = crf_layer(pred_mask.cpu(), sample.cpu()).to(device)
+                sample = (sample - sample.min()) / (sample.max() - sample.min())
+                # crf_mask, b = crf_layer(pred_mask.cpu(), sample.cpu())
                 pred_mask_onehot = pred_mask_to_onehot(pred_mask)
+                labels_out, N = cc3d.connected_components(pred_mask_onehot[0, 1].cpu().numpy(), return_N=True)
+
+                # crf_mask_onehot = pred_mask_to_onehot(crf_mask)
                 cfm.add_dice(pred_mask_onehot, target_mask)
-                # pred_mask = torch.argmax(pred_mask, dim=1).type(torch.int8)
-                # crf_mask = torch.argmax(crf_mask, dim=1).type(torch.int8)
-                # target_mask = torch.argmax(target_mask, dim=1).type(torch.int8)
-                save_nifti_image(os.path.join(f'samples/{_type}/image/image_{i:03d}.nii'), sample, image_affine)
-                save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), target_mask, mask_affine)
-                save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), pred_mask, mask_affine)
-                # save_nifti_image(os.path.join(f'samples/{_type}/pred/crf_mask_{i:03d}.nii'), crf_mask, mask_affine)
+                # cfm2.add_dice(crf_mask_onehot, target_mask)
+                # print(len(b), b[0].shape)
+                if N > 1:
+                    save_nifti_image(os.path.join(f'samples/{_type}/image/image_{i:03d}.nii'), sample, image_affine)
+                    save_nifti_image(os.path.join(f'samples/{_type}/mask/mask_{i:03d}.nii'), target_mask, mask_affine)
+                    save_nifti_image(os.path.join(f'samples/{_type}/pred/pred_mask_{i:03d}.nii'), pred_mask_onehot, mask_affine)
+                    crf_mask = crf_layer(pred_mask.cpu(), sample.cpu())
+                    crf_mask_onehot = pred_mask_to_onehot(crf_mask)
+                    labels_out2, N2, = cc3d.connected_components(crf_mask_onehot[0, 1].cpu().numpy(), return_N=True)
+                    print(N, N2)
+                    # for segid in range(1, N + 1):
+                    #     extracted = labels_out * (labels_out == segid)
+                    #     import numpy as np
+                    #     print(i, segid, np.count_nonzero(extracted))
+                    #
+                    #     image = nib.Nifti1Image(extracted, mask_affine)
+                    #     nib.save(image, os.path.join(f'samples/{_type}/pred/cc_{i:03d}_{segid}.nii'))
+
+                # save_nifti_image(os.path.join(f'samples/{_type}/pred/crf_mask_{i:03d}.nii'), crf_mask_onehot, mask_affine)
+                # save_nifti_image(os.path.join(f'samples/{_type}/pred/crf_mask_{i:03d}.nii'), crf_mask_onehot, mask_affine)
                 i += 1
-                if i > 5:
+                if i > 100:
                     break
-    print(cfm.dice.get_buffer(), cfm.get_mean_dice())
+    print(cfm.get_mean_dice())
+    # print(cfm2.dice.get_buffer(), cfm2.get_mean_dice())
 
 
 def main():
@@ -166,7 +186,12 @@ image_affine = None
 mask_affine = None
 
 if __name__ == "__main__":
-    main()
+    # main()
+    from torch.utils.cpp_extension import CUDA_HOME
+    import os
+
+    print(os.environ.get('CUDA_PATH'))
+    print(CUDA_HOME)
     # x = CRF()
     # for m in x.modules():
     #     print(m)
