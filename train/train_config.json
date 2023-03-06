@@ -13,7 +13,7 @@
   "use_validation": "True",
   "validation_ratio": 0.05,
 
-  "unet_embed_dims": [24, 48, 96, 192],
+  "unet_embed_dims": [48, 96, 192, 384],
 
   "focal_patch_size": 2,
   "focal_embed_dims": 24,
