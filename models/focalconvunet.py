@@ -85,9 +85,9 @@ class FocalConvUNet(nn.Module):
         for i_layer in range(self.num_layers + 1):
             in_ch = in_chans if i_layer == 0 else embed_dim[i_layer - 1]
             out_ch = embed_dim[0] if i_layer == 0 else in_ch
-            self.residual_conv_layers.append(ResConvBlock(in_ch, out_ch, 3, 0))
+            self.residual_conv_layers.append(ResConvBlock(in_ch, out_ch, 3))
 
-        self.bottleneck_conv = ResConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3)
+        self.bottleneck_conv = ResConvBlock(in_ch=embed_dim[-1], out_ch=embed_dim[-1], kernel_size=3, drop_rate=drop_rate)
 
         self.decoder_layers = nn.ModuleList()
         for i in range(len(self.embed_dim)):
