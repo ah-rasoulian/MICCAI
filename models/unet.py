@@ -16,7 +16,7 @@ class UNet(nn.Module):
             encoder[f'pool-{i + 1}'] = nn.MaxPool3d(kernel_size=2, stride=2)
         self.encoder = nn.ModuleDict(encoder)
 
-        self.bottleneck = ResConvBlock(in_ch=self.embed_dims[-2], out_ch=self.embed_dims[-1], kernel_size=3)
+        self.bottleneck = ResConvBlock(in_ch=self.embed_dims[-2], out_ch=self.embed_dims[-1], kernel_size=3, drop_rate=drop_rate)
 
         self.embed_dims.reverse()
         self.decoder = nn.ModuleDict()
