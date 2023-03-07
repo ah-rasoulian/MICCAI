@@ -72,7 +72,6 @@ def main():
     loss_fn = FocalDiceBoundaryLoss(alpha=0.45, beta=0.45)
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-6)
-    scheduler = ReduceLROnPlateau(opt, mode='min', patience=1, factor=0.8)
     early_stopping = EarlyStopping(model, 3, os.path.join(extra_path, f"weights/{checkpoint_name}.pt"))
     epoch_number = 1
     train_losses = []
@@ -91,7 +90,6 @@ def main():
               f"train-95hd={_metrics['train_cfm'].get_mean_hausdorff_distance()}, valid-95hd={_metrics['valid_cfm'].get_mean_hausdorff_distance()}")
 
         early_stopping(val_loss)
-        scheduler.step(val_loss)
         epoch_number += 1
 
     if use_validation:
