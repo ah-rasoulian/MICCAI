@@ -48,29 +48,26 @@ class ResConvBlock(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, drop_rate=0):
         super().__init__()
         self.conv1 = nn.Conv3d(in_ch, out_ch, kernel_size, padding='same')
-        self.norm1 = nn.LayerNorm([out_ch])
+        self.norm1 = nn.InstanceNorm3d(out_ch)
         self.conv2 = nn.Conv3d(out_ch, out_ch, kernel_size, padding='same')
-        self.norm2 = nn.LayerNorm([out_ch])
+        self.norm2 = nn.InstanceNorm3d(out_ch)
 
         self.conv3 = nn.Conv3d(in_ch, out_ch, kernel_size, padding='same')
-        self.norm3 = nn.LayerNorm([out_ch])
+        self.norm3 = nn.InstanceNorm3d(out_ch)
         self.act = nn.GELU()
         self.dropout = nn.Dropout3d(drop_rate)
 
     def forward(self, x):
         residual = x
         x = self.conv1(x)  # b, c, d, h, w
-        x = self.norm1(x.permute(0, 2, 3, 4, 1))  # b, d, h, w, c
-        x = x.permute(0, 4, 1, 2, 3)
+        x = self.norm1(x)  # b, d, h, w, c
         x = self.act(x)
 
         x = self.conv2(x)
-        x = self.norm2(x.permute(0, 2, 3, 4, 1))
-        x = x.permute(0, 4, 1, 2, 3)
+        x = self.norm2(x)
 
         residual = self.conv3(residual)
-        residual = self.norm3(residual.permute(0, 2, 3, 4, 1))
-        residual = residual.permute(0, 4, 1, 2, 3)
+        residual = self.norm3(residual)
 
         x = x + residual
         x = self.act(x)

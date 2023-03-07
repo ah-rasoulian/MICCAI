@@ -69,11 +69,11 @@ def main():
     checkpoint_name = model.__class__.__name__
     num_params = sum(p.numel() for p in model.parameters()) / 1e6
     print("model: ", checkpoint_name, " num-params:", num_params)
-    loss_fn = CEDiceBoundaryLoss()
+    loss_fn = FocalDiceBoundaryLoss(alpha=0.45, beta=0.45)
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-6)
-    scheduler = ReduceLROnPlateau(opt, mode='min', patience=5, factor=0.9)
-    early_stopping = EarlyStopping(model, 5, os.path.join(extra_path, f"weights/{checkpoint_name}.pt"))
+    scheduler = ReduceLROnPlateau(opt, mode='min', patience=1, factor=0.8)
+    early_stopping = EarlyStopping(model, 3, os.path.join(extra_path, f"weights/{checkpoint_name}.pt"))
     epoch_number = 1
     train_losses = []
     valid_losses = []
@@ -98,6 +98,7 @@ def main():
         test_ds = AneurysmDataset(data_path, test_sub_ses, return_dist_map=False)
         test_cfm = ConfusionMatrix()
         test_loader = DataLoader(test_ds, batch_size=batch_size, num_workers=num_workers)
+        load_model(model, os.path.join(extra_path, f"weights/{checkpoint_name}.pt"))
         validation(model, test_loader, test_cfm)
         print_test_result(test_cfm)
 
