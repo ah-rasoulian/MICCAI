@@ -1,3 +1,5 @@
+import nptyping
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,6 +18,8 @@ from timm.models.layers import to_3tuple
 
 from monai.transforms.post.array import one_hot
 from monai.metrics import DiceMetric, MeanIoU, HausdorffDistanceMetric
+import cc3d
+from scipy.ndimage import center_of_mass
 
 
 class ConfusionMatrix:
@@ -26,22 +30,52 @@ class ConfusionMatrix:
 
         self.losses = []
         self.number_of_samples = 0
+        self.number_of_components = 0
 
-        self.true_positives = None
-        self.true_negatives = None
-        self.false_positives = None
-        self.false_negatives = None
+        self.false_positive_rate = []
+        self.sensitivity_rate = []
 
         self.dice = DiceMetric(include_background=False, reduction="none")
         self.iou = MeanIoU(include_background=False, reduction="none")
         self.hausdorff_distances = HausdorffDistanceMetric(include_background=False, percentile=95, directed=True, reduction="none")
 
     def add_prediction(self, pred_mask, target_mask):
-        pred_mask = torch.argmax(pred_mask, dim=1, keepdim=True).detach
-        target_mask = target_mask.detach()
+        b, c, d, h, w = pred_mask.shape
+        assert b == 1, "only batch size 1 is supported"
+        pred_mask = torch.argmax(pred_mask, dim=1).detach()  # b, d, h, w
+        target_mask = torch.argmax(target_mask, dim=1).detach()  # b, d, h, w
 
-        self.predictions.extend(list(pred_mask.detach()))
-        self.ground_truth.extend(list(target_mask.detach()))
+        pred_mask = pred_mask.squeeze(0).cpu().numpy().astype(np.uint8)  # d, h, w
+        target_mask = target_mask.squeeze(0).cpu().numpy().astype(np.uint8)  # d, h, w
+
+        pred_target_pairs = []
+        false_positives = 0
+        pred_mask = cc3d.dust(pred_mask, 10)
+        pred_contours, pred_N = cc3d.connected_components(pred_mask, return_N=True)
+        tg_contours, tg_N = cc3d.connected_components(target_mask, return_N=True)
+
+        for pred_contour_id in range(1, pred_N + 1):
+            pc = pred_contours * (pred_contours == pred_contour_id) / pred_contour_id
+            com = tuple(np.round(center_of_mass(pc)).astype(int))
+            correctly_predicted = False
+            for tg_contour_id in range(1, tg_N + 1):
+                tc = tg_contours * (tg_contours == tg_contour_id)
+                if tc[com] == 1:
+                    correctly_predicted = True
+                    pred_target_pairs.append((pc, tc))
+                    break
+            if not correctly_predicted:
+                false_positives += 1
+
+        self.false_positive_rate.append(false_positives)
+        self.sensitivity_rate.append(min(np.divide(len(pred_target_pairs), tg_N), 1.))  # if multiple predictions match the same gt
+
+        for pc, tg in pred_target_pairs:
+            pred = torch.from_numpy(pc.astype(np.uint8)).unsqueeze(0).unsqueeze(0)
+            target = torch.from_numpy(tg.astype(np.uint8)).unsqueeze(0).unsqueeze(0)
+            self.dice(pred, target)
+            self.iou(pred, target)
+            self.hausdorff_distances(pred, target)
 
     def add_number_of_samples(self, new_samples):
         self.number_of_samples += new_samples
@@ -70,54 +104,11 @@ class ConfusionMatrix:
     def get_mean_hausdorff_distance(self):
         return self.hausdorff_distances.aggregate("mean").item()
 
-    def compute_confusion_matrix(self):
-        self.predictions = torch.stack(self.predictions).to(self.device)
-        self.ground_truth = torch.stack(self.ground_truth).to(self.device)
+    def get_false_positives_rate(self):
+        return np.mean(self.false_positive_rate)
 
-        self.true_positives = torch.sum(self.predictions * self.ground_truth, dim=0)
-        self.true_negatives = torch.sum((1 - self.predictions) * (1 - self.ground_truth), dim=0)
-        self.false_positives = torch.sum(self.predictions * (1 - self.ground_truth), dim=0)
-        self.false_negatives = torch.sum((1 - self.predictions) * self.ground_truth, dim=0)
-
-    def get_accuracy(self):
-        numerator = self.true_positives + self.true_negatives
-        denominator = numerator + self.false_positives + self.false_negatives
-
-        return torch.divide(numerator, denominator)
-
-    def get_precision(self):
-        numerator = self.true_positives
-        denominator = self.true_positives + self.false_positives
-
-        return torch.divide(numerator, denominator)
-
-    def get_recall_sensitivity(self):
-        numerator = self.true_positives
-        denominator = self.true_positives + self.false_negatives
-
-        return torch.divide(numerator, denominator)
-
-    def get_specificity(self):
-        numerator = self.true_negatives
-        denominator = self.true_negatives + self.false_positives
-
-        return torch.divide(numerator, denominator)
-
-    def get_f1_score(self):
-        precision = self.get_precision()
-        recall = self.get_recall_sensitivity()
-        numerator = 2 * precision * recall
-        denominator = precision + recall
-
-        return torch.divide(numerator, denominator)
-
-    # todo: fix it
-    def get_auc_score(self):
-        scores = []
-        for i in range(self.ground_truth.shape[-1]):
-            scores.append(metrics.roc_auc_score(self.ground_truth[:, 0, i].cpu().numpy(),
-                                                self.predictions[:, 0, i].cpu().numpy()))
-        return np.array(scores)
+    def get_sensitivity_rate(self):
+        return np.nanmean(self.sensitivity_rate)
 
 
 class EarlyStopping:
@@ -170,11 +161,18 @@ class Augmentation:
 
 
 def save_nifti_image(file_path, image, affine):
-    assert image.dim() == 5 and image.shape[0] == 1, "expected 1 in batch format"  # 1, c, d, h, w
-    if image.shape[1] > 1:
-        image = image[:, 1]  # getting the mask for foreground
-    image = nib.Nifti1Image(image.squeeze().cpu().numpy(), affine)
-    nib.save(image, file_path)
+    if image.dim() == 3:
+        image = nib.Nifti1Image(np.array(image, dtype=nptyping.Float32), affine)
+        nib.save(image, file_path)
+    else:
+        if image.shape[1] > 1:
+            # image = image[:, 1]  # getting the mask for foreground
+            image = torch.softmax(image, dim=1)
+            image = torch.argmax(image, dim=1)
+        image = image.squeeze().numpy().astype(np.float32)
+
+        image = nib.Nifti1Image(image, affine)
+        nib.save(image, file_path)
 
 
 def pred_mask_to_onehot(pred_mask, softmax=True):
@@ -197,17 +195,19 @@ def onehot_to_dist(onehot: torch.Tensor, dtype=torch.int32):
     return result.type(torch.FloatTensor)
 
 
-class CEDiceBoundaryLoss(nn.Module):
-    def __init__(self, alpha=0.01):
+class FocalDiceBoundaryLoss(nn.Module):
+    def __init__(self, alpha=0.4, beta=0.5):
         super().__init__()
+        assert alpha + beta <= 1
         self.ce_loss = CrossEntropy(idc=[0, 1])
         self.dice_loss = GeneralizedDice(idc=[0, 1])
         self.boundary_loss = BoundaryLoss(idc=[1])
         self.alpha = alpha
+        self.beta = beta
 
     def forward(self, pred_mask, target_mask, dist_mask):
         pred_mask = F.softmax(pred_mask, dim=1)
-        return self.ce_loss(pred_mask, target_mask) + self.dice_loss(pred_mask, target_mask) + self.alpha * self.boundary_loss(pred_mask, dist_mask)
+        return self.alpha * self.ce_loss(pred_mask, target_mask) + self.beta * self.dice_loss(pred_mask, target_mask) + (1 - self.alpha - self.beta) * self.boundary_loss(pred_mask, dist_mask)
 
 
 def enable_dropout(model):
@@ -247,14 +247,14 @@ def build_model(config_dict):
     focal_levels = list(config_dict["focal_levels"])
     focal_windows = list(config_dict["focal_windows"])
     if model_name == "unet":
-        model = UNet(in_ch, num_classes, unet_embed_dims, drop_rate=0.5)
+        model = UNet(in_ch, num_classes, unet_embed_dims)
     elif model_name == 'swinunetr':
-        model = SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24, drop_rate=0.5)
+        model = SwinUNETR(img_size=to_3tuple(img_size), in_channels=in_ch, out_channels=num_classes, feature_size=24)
     elif model_name == "focalconvunet":
-        model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes, drop_rate=0.5,
+        model = FocalConvUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
                               embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
     else:
-        model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes, drop_rate=0.5,
+        model = FocalUNet(img_size=img_size, patch_size=focal_patch_size, in_chans=in_ch, num_classes=num_classes,
                           embed_dim=focal_embed_dims, depths=focal_depths, focal_levels=focal_levels, focal_windows=focal_windows, use_conv_embed=True)
 
     return model

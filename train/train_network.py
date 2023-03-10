@@ -69,7 +69,7 @@ def main():
     checkpoint_name = model.__class__.__name__
     num_params = sum(p.numel() for p in model.parameters()) / 1e6
     print("model: ", checkpoint_name, " num-params:", num_params)
-    loss_fn = FocalDiceBoundaryLoss(alpha=0.45, beta=0.45)
+    loss_fn = FocalDiceBoundaryLoss(alpha=1, beta=0)
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-6)
     early_stopping = EarlyStopping(model, 3, os.path.join(extra_path, f"weights/{checkpoint_name}.pt"))

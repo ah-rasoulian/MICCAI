@@ -4,15 +4,14 @@ import torch
 
 
 class UNet(nn.Module):
-    def __init__(self, in_ch, num_classes, embed_dims, drop_rate):
+    def __init__(self, in_ch, num_classes, embed_dims):
         super().__init__()
         self.num_classes = num_classes
         self.embed_dims = embed_dims
 
         encoder = OrderedDict()
         for i in range(len(self.embed_dims) - 1):
-            encoder[f'contracting-{i + 1}'] = ResConvBlock(in_ch=in_ch if i == 0 else self.embed_dims[i - 1], out_ch=self.embed_dims[i], kernel_size=3,
-                                                           drop_rate=drop_rate if len(self.embed_dims) - 1 - i <= 1 else 0)
+            encoder[f'contracting-{i + 1}'] = ResConvBlock(in_ch=in_ch if i == 0 else self.embed_dims[i - 1], out_ch=self.embed_dims[i], kernel_size=3)
             encoder[f'pool-{i + 1}'] = nn.MaxPool3d(kernel_size=2, stride=2)
         self.encoder = nn.ModuleDict(encoder)
 
@@ -23,9 +22,9 @@ class UNet(nn.Module):
         for i in range(len(self.embed_dims) - 1):
             self.decoder[f'up-{i + 1}'] = nn.ConvTranspose3d(in_channels=self.embed_dims[i], out_channels=self.embed_dims[i + 1], kernel_size=3, stride=2, padding=1, output_padding=1)
             self.decoder[f'expansive-{i + 1}'] = ResConvBlock(in_ch=2 * self.embed_dims[i + 1], out_ch=self.embed_dims[i + 1], kernel_size=3,
-                                                              drop_rate=drop_rate if i <= 1 else 0)
+                                                              drop_rate=0.25)
 
-        self.segmentation_head = nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=1, padding='same')
+        self.segmentation_head = nn.Conv3d(in_channels=self.embed_dims[-1], out_channels=num_classes, kernel_size=3, padding='same')
 
     def forward(self, x):
         residuals = []
@@ -45,7 +44,7 @@ class UNet(nn.Module):
 
 
 class ResConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size, drop_rate=0):
+    def __init__(self, in_ch, out_ch, kernel_size, drop_rate=0.):
         super().__init__()
         self.conv1 = nn.Conv3d(in_ch, out_ch, kernel_size, padding='same')
         self.norm1 = nn.InstanceNorm3d(out_ch)

@@ -66,7 +66,7 @@ class FocalConvUNet(nn.Module):
                                                                     self.patches_resolution[2] // (2 ** i_layer)),
                                                   depth=depths[i_layer],
                                                   mlp_ratio=self.mlp_ratio,
-                                                  drop=drop_rate if self.num_layers - 1 - i_layer <= 1 else 0.,
+                                                  drop=drop_rate,
                                                   drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
                                                   norm_layer=norm_layer,
                                                   downsample=PatchEmbed,
@@ -94,7 +94,7 @@ class FocalConvUNet(nn.Module):
             ind = len(self.embed_dim) - 1 - i
             in_ch = embed_dim[ind]
             out_ch = embed_dim[ind - 1] if ind > 0 else embed_dim[0]
-            self.decoder_layers.append(FocalConvUpBlock(in_ch, out_ch, drop_rate=drop_rate if i <= 1 else 0.))
+            self.decoder_layers.append(FocalConvUpBlock(in_ch, out_ch, drop_rate=0.25))
 
         self.segmentation_head = nn.Conv3d(in_channels=embed_dim[0], out_channels=num_classes, kernel_size=3, padding='same')
 

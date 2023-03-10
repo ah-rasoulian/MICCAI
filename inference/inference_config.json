@@ -1,7 +1,7 @@
 {
-  "setup": "classification",
-  "model": "swinunetr",
-  "checkpoint_name": "Sequential.pt",
+  "setup": "monte-carlo",
+  "model": "focalconnvunet",
+  "checkpoint_name": "backup/FocalConvUNet.pt",
   "img_size": 64,
   "in_ch": 1,
   "num_classes": 2,
@@ -12,7 +12,7 @@
   "focal_patch_size": 2,
   "focal_embed_dims": 24,
   "focal_depths": [2, 2, 2, 2],
-  "focal_levels": [2, 2, 2, 2],
+  "focal_levels": [3, 3, 3, 3],
   "focal_windows": [3, 3, 3, 3],
 
   "data_path": "C:\\lausanne-aneurysym-patches\\Data_Set_Feb_05_2023_v1-all",
